@@ -20,14 +20,14 @@ export function RadarQueue({
   return (
     <div className="flex flex-col items-center justify-center min-h-[480px] p-8 text-center animate-fade-in">
       {/* Radar Animation Rings */}
-      <div className="relative flex items-center justify-center w-64 h-64 my-6">
-        <div className="absolute inset-0 rounded-full border border-indigo-500/20 animate-radar-pulse" />
+      <div className="relative flex items-center justify-center w-64 h-64 my-6 overflow-hidden pointer-events-none select-none">
+        <div className="absolute inset-0 rounded-full border border-indigo-500/20 animate-radar-pulse will-change-transform transform-gpu" />
         <div
-          className="absolute inset-0 rounded-full border border-indigo-500/30 animate-radar-pulse"
+          className="absolute inset-0 rounded-full border border-indigo-500/30 animate-radar-pulse will-change-transform transform-gpu"
           style={{ animationDelay: "1s" }}
         />
         <div
-          className="absolute inset-0 rounded-full border border-purple-500/30 animate-radar-pulse"
+          className="absolute inset-0 rounded-full border border-purple-500/30 animate-radar-pulse will-change-transform transform-gpu"
           style={{ animationDelay: "2s" }}
         />
 

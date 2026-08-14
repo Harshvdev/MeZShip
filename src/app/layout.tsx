@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import "@/styles/globals.css";
 
 export const metadata: Metadata = {
@@ -10,14 +10,25 @@ export const metadata: Metadata = {
   },
 };
 
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
+  interactiveWidget: "resizes-content",
+  themeColor: "#090a0f",
+};
+
 export default function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className="dark">
-      <body className="antialiased min-h-screen flex flex-col">{children}</body>
+    <html lang="en" className="dark h-full">
+      <body className="antialiased h-full w-full overflow-hidden flex flex-col bg-[#090a0f] text-gray-100">
+        {children}
+      </body>
     </html>
   );
 }

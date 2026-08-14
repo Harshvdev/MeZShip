@@ -30,16 +30,16 @@ const config: Config = {
       },
       keyframes: {
         radar: {
-          "0%": { transform: "scale(0.8)", opacity: "1" },
-          "100%": { transform: "scale(2.4)", opacity: "0" },
+          "0%": { transform: "scale(0.8) translateZ(0)", opacity: "0.9" },
+          "100%": { transform: "scale(2.2) translateZ(0)", opacity: "0" },
         },
         fadeIn: {
           "0%": { opacity: "0" },
           "100%": { opacity: "1" },
         },
         slideUp: {
-          "0%": { opacity: "0", transform: "translateY(12px)" },
-          "100%": { opacity: "1", transform: "translateY(0)" },
+          "0%": { opacity: "0", transform: "translateY(12px) translateZ(0)" },
+          "100%": { opacity: "1", transform: "translateY(0) translateZ(0)" },
         }
       },
     },

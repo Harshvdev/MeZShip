@@ -270,7 +270,7 @@ export default function Home() {
   const nearestCampus = useMemo(() => (campuses.length > 0 ? campuses[0] : null), [campuses]);
 
   return (
-    <div className="flex-1 flex flex-col min-h-screen">
+    <div className="h-full h-dvh max-h-dvh w-full flex flex-col overflow-hidden bg-[#090a0f]">
       <Navbar
         profile={profile}
         onlineCount={onlineCount}
@@ -279,10 +279,10 @@ export default function Home() {
         onSignOut={signOut}
       />
 
-      <main className="flex-1 max-w-3xl w-full mx-auto px-2 py-3 sm:p-6 flex flex-col justify-center">
+      <main className="flex-1 min-h-0 max-w-3xl w-full mx-auto px-2 sm:px-4 py-2 sm:py-4 flex flex-col overflow-hidden">
         {/* BAN SCREEN STATE */}
         {isBanned ? (
-          <div className="p-6 sm:p-8 rounded-3xl glass-panel border border-rose-500/30 text-center max-w-md mx-auto animate-fade-in shadow-2xl">
+          <div className="p-6 sm:p-8 rounded-3xl glass-panel border border-rose-500/30 text-center max-w-md mx-auto animate-fade-in shadow-2xl my-auto">
             <div className="w-12 h-12 rounded-2xl bg-rose-500/10 border border-rose-500/20 text-rose-400 flex items-center justify-center mx-auto mb-4">
               <AlertTriangle className="w-6 h-6" />
             </div>
@@ -296,9 +296,9 @@ export default function Home() {
           </div>
         ) : (
           /* OPENTALK STYLE CHAT CONTAINER */
-          <div className="w-full rounded-2xl sm:rounded-3xl glass-panel border border-white/10 overflow-hidden shadow-2xl flex flex-col h-[520px] sm:h-[580px] max-h-[calc(100dvh-5.5rem)] relative transition-all duration-300">
+          <div className="w-full flex-1 min-h-0 rounded-2xl sm:rounded-3xl glass-panel border border-white/10 overflow-hidden shadow-2xl flex flex-col relative transition-all duration-300">
             {/* Top Scope & Info Header */}
-            <div className="px-3.5 sm:px-5 py-2.5 sm:py-3.5 border-b border-white/10 bg-white/[0.03] flex items-center justify-between gap-2">
+            <div className="shrink-0 px-3.5 sm:px-5 py-2.5 sm:py-3 border-b border-white/10 bg-white/[0.03] flex items-center justify-between gap-2">
               {chatState === "MATCHED" && partner ? (
                 /* Partner Header when Matched */
                 <>
@@ -416,11 +416,11 @@ export default function Home() {
             </div>
 
             {/* Middle Main Viewport */}
-            <div className="flex-1 overflow-y-auto p-4 sm:p-6 flex flex-col">
+            <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-3 sm:p-5 flex flex-col">
               {chatState === "IDLE" ? (
                 /* IDLE STATE: Clean OpenTalk Card */
-                <div className="flex-1 flex flex-col justify-between animate-fade-in">
-                  <div className="space-y-6 pt-2">
+                <div className="flex-1 flex flex-col justify-between animate-fade-in my-auto">
+                  <div className="space-y-5 pt-1">
                     {/* Welcoming Message Bubble */}
                     <div className="p-4 sm:p-5 rounded-2xl bg-white/5 border border-white/10 max-w-lg shadow-lg">
                       <h2 className="text-base sm:text-lg font-bold text-white mb-1.5">
@@ -428,7 +428,7 @@ export default function Home() {
                       </h2>
                       <p className="text-xs sm:text-sm text-gray-300 leading-relaxed">
                         <span className="font-semibold text-emerald-400">{onlineCount}</span>{" "}
-                        {onlineCount === 1 ? "person" : "people"} online right now. Connect with someone nearby anonymously in real-time.
+                        {onlineCount === 1 ? "person" : "people"} online right now. Connect with someone nearby in real-time.
                       </p>
                     </div>
 
@@ -447,7 +447,7 @@ export default function Home() {
                   </div>
 
                   {/* Highlights Footer */}
-                  <div className="pt-4 sm:pt-6 border-t border-white/5 flex flex-wrap items-center gap-3 sm:gap-6 text-[11px] sm:text-xs text-gray-400">
+                  <div className="pt-4 sm:pt-6 border-t border-white/5 flex flex-wrap items-center gap-3 sm:gap-6 text-[11px] sm:text-xs text-gray-400 mt-6">
                     <div className="flex items-center gap-1.5">
                       <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" />
                       <span>Automatic 5 km radius</span>
@@ -464,15 +464,15 @@ export default function Home() {
                 </div>
               ) : chatState === "SEARCHING" ? (
                 /* SEARCHING STATE: Radar Scanning Indicator */
-                <div className="flex-1 flex flex-col items-center justify-center text-center p-4 sm:p-6 animate-fade-in">
-                  <div className="relative flex items-center justify-center w-36 h-36 sm:w-48 sm:h-48 my-3 sm:my-4">
-                    <div className="absolute inset-0 rounded-full border border-teal-500/20 animate-radar-pulse" />
+                <div className="flex-1 flex flex-col items-center justify-center text-center p-4 sm:p-6 animate-fade-in my-auto">
+                  <div className="relative flex items-center justify-center w-36 h-36 sm:w-44 sm:h-44 my-3 sm:my-4 overflow-hidden pointer-events-none select-none">
+                    <div className="absolute inset-0 rounded-full border border-teal-500/30 animate-radar-pulse will-change-transform transform-gpu" />
                     <div
-                      className="absolute inset-0 rounded-full border border-indigo-500/30 animate-radar-pulse"
+                      className="absolute inset-0 rounded-full border border-indigo-500/40 animate-radar-pulse will-change-transform transform-gpu"
                       style={{ animationDelay: "1s" }}
                     />
                     <div
-                      className="absolute inset-0 rounded-full border border-purple-500/30 animate-radar-pulse"
+                      className="absolute inset-0 rounded-full border border-purple-500/40 animate-radar-pulse will-change-transform transform-gpu"
                       style={{ animationDelay: "2s" }}
                     />
 
@@ -502,7 +502,7 @@ export default function Home() {
 
                   <button
                     onClick={leave}
-                    className="flex items-center gap-1.5 px-3.5 sm:px-4 py-1.5 sm:py-2 rounded-xl bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white border border-white/10 text-xs transition-colors"
+                    className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white border border-white/10 text-xs transition-colors"
                   >
                     <X className="w-3.5 h-3.5" />
                     <span>Cancel Search</span>
@@ -510,7 +510,7 @@ export default function Home() {
                 </div>
               ) : chatState === "PARTNER_SKIPPED" ? (
                 /* PARTNER SKIPPED / LEFT STATE */
-                <div className="flex-1 flex flex-col items-center justify-center text-center p-4 sm:p-6 animate-fade-in max-w-md mx-auto">
+                <div className="flex-1 flex flex-col items-center justify-center text-center p-4 sm:p-6 animate-fade-in max-w-md mx-auto my-auto">
                   <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-2xl bg-teal-500/10 border border-teal-500/20 text-teal-400 flex items-center justify-center mb-3 sm:mb-4">
                     <RotateCcw className="w-5 h-5 sm:w-6 sm:h-6" />
                   </div>
@@ -531,9 +531,10 @@ export default function Home() {
                   <div className="flex items-center gap-2.5 sm:gap-3">
                     <button
                       onClick={leave}
-                      className="px-3.5 sm:px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-gray-300 text-xs font-medium transition-colors"
+                      className="flex items-center gap-1.5 px-3.5 sm:px-4 py-2 rounded-xl bg-white/5 hover:bg-rose-500/20 text-gray-300 hover:text-rose-300 border border-white/10 text-xs font-medium transition-colors"
                     >
-                      Exit to Home
+                      <LogOut className="w-3.5 h-3.5" />
+                      <span>Exit to Home</span>
                     </button>
                     <button
                       onClick={handleStartChat}
@@ -545,7 +546,7 @@ export default function Home() {
                 </div>
               ) : chatState === "ERROR" ? (
                 /* ERROR STATE */
-                <div className="flex-1 flex flex-col items-center justify-center text-center p-4 sm:p-6 animate-fade-in max-w-md mx-auto">
+                <div className="flex-1 flex flex-col items-center justify-center text-center p-4 sm:p-6 animate-fade-in max-w-md mx-auto my-auto">
                   <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-2xl bg-rose-500/10 border border-rose-500/20 text-rose-400 flex items-center justify-center mb-3 sm:mb-4">
                     <AlertTriangle className="w-5 h-5 sm:w-6 sm:h-6" />
                   </div>
@@ -558,9 +559,10 @@ export default function Home() {
                   <div className="flex items-center gap-2.5 sm:gap-3">
                     <button
                       onClick={leave}
-                      className="px-3.5 sm:px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-gray-300 text-xs font-medium transition-colors"
+                      className="flex items-center gap-1.5 px-3.5 sm:px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-gray-300 text-xs font-medium transition-colors"
                     >
-                      Cancel
+                      <LogOut className="w-3.5 h-3.5" />
+                      <span>Return Home</span>
                     </button>
                     <button
                       onClick={handleStartChat}
@@ -572,7 +574,7 @@ export default function Home() {
                 </div>
               ) : (
                 /* MATCHED ACTIVE MESSAGES STREAM */
-                <div className="flex-1 flex flex-col justify-between">
+                <div className="flex-1 min-h-0 flex flex-col justify-between">
                   {messages.length === 0 ? (
                     <div className="h-full flex flex-col items-center justify-center text-center p-4 sm:p-6 text-gray-500 text-xs my-auto">
                       <Sparkles className="w-7 h-7 sm:w-8 sm:h-8 text-teal-400/50 mb-2 animate-pulse" />
@@ -582,7 +584,7 @@ export default function Home() {
                       </p>
                     </div>
                   ) : (
-                    <div className="space-y-2">
+                    <div className="space-y-2 py-1">
                       {messages.map((msg) => (
                         <MessageBubble key={msg.id} message={msg} />
                       ))}
@@ -594,13 +596,13 @@ export default function Home() {
             </div>
 
             {/* Bottom Control Bar (OpenTalk Signature Bar) */}
-            <div className="px-2.5 sm:px-4 py-2 sm:py-3 bg-white/[0.04] border-t border-white/10 flex items-center gap-1.5 sm:gap-2.5">
-              {/* Dynamic Left Action Button */}
+            <div className="shrink-0 px-2 sm:px-4 py-2 sm:py-3 bg-white/[0.04] border-t border-white/10 flex items-center gap-1.5 sm:gap-2">
+              {/* Dynamic Left Action Button Group */}
               {chatState === "IDLE" ? (
                 <button
                   type="button"
                   onClick={handleStartChat}
-                  className="flex items-center justify-center gap-1.5 px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl bg-teal-500 hover:bg-teal-400 text-gray-950 font-bold text-xs sm:text-sm shadow-lg shadow-teal-500/20 transition-all hover:scale-[1.02] active:scale-[0.98] shrink-0"
+                  className="flex items-center justify-center gap-1.5 px-3.5 sm:px-5 py-2 sm:py-2.5 rounded-xl bg-teal-500 hover:bg-teal-400 text-gray-950 font-bold text-xs sm:text-sm shadow-lg shadow-teal-500/20 transition-all hover:scale-[1.02] active:scale-[0.98] shrink-0"
                 >
                   <span>Start</span>
                   <span className="hidden md:inline-block text-[10px] font-semibold bg-black/20 text-black px-1.5 py-0.5 rounded">
@@ -613,33 +615,60 @@ export default function Home() {
                   onClick={leave}
                   className="flex items-center justify-center gap-1.5 px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/30 font-semibold text-xs sm:text-sm transition-all shrink-0"
                 >
-                  <span>Stop</span>
+                  <X className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                  <span>Cancel</span>
                   <span className="hidden md:inline-block text-[10px] font-semibold bg-rose-500/30 text-rose-200 px-1.5 py-0.5 rounded">
                     Esc
                   </span>
                 </button>
               ) : chatState === "MATCHED" ? (
-                <button
-                  type="button"
-                  onClick={skip}
-                  className="flex items-center justify-center gap-1.5 px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs sm:text-sm shadow-lg shadow-indigo-600/30 transition-all hover:scale-[1.02] active:scale-[0.98] shrink-0"
-                >
-                  <span>Skip</span>
-                  <span className="hidden md:inline-block text-[10px] font-semibold bg-black/30 text-indigo-100 px-1.5 py-0.5 rounded">
-                    Esc
-                  </span>
-                </button>
+                /* MATCHED: Leave + Skip buttons */
+                <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
+                  <button
+                    type="button"
+                    onClick={leave}
+                    className="flex items-center justify-center gap-1 px-2.5 sm:px-3.5 py-2 sm:py-2.5 rounded-xl bg-white/5 hover:bg-rose-500/20 text-gray-300 hover:text-rose-300 border border-white/10 hover:border-rose-500/30 font-semibold text-xs sm:text-sm transition-all"
+                    title="Leave chat and return to home"
+                  >
+                    <LogOut className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                    <span className="hidden xs:inline sm:inline">Leave</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={skip}
+                    className="flex items-center justify-center gap-1.5 px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs sm:text-sm shadow-lg shadow-indigo-600/30 transition-all hover:scale-[1.02] active:scale-[0.98]"
+                    title="Skip to next user"
+                  >
+                    <span>Skip</span>
+                    <span className="hidden md:inline-block text-[10px] font-semibold bg-black/30 text-indigo-100 px-1.5 py-0.5 rounded">
+                      Esc
+                    </span>
+                  </button>
+                </div>
               ) : (
-                <button
-                  type="button"
-                  onClick={handleStartChat}
-                  className="flex items-center justify-center gap-1.5 px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl bg-teal-500 hover:bg-teal-400 text-gray-950 font-bold text-xs sm:text-sm shadow-lg shadow-teal-500/20 transition-all hover:scale-[1.02] active:scale-[0.98] shrink-0"
-                >
-                  <span>Next</span>
-                  <span className="hidden md:inline-block text-[10px] font-semibold bg-black/20 text-black px-1.5 py-0.5 rounded">
-                    Esc
-                  </span>
-                </button>
+                /* PARTNER_SKIPPED / LEFT: Leave + Next buttons */
+                <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
+                  <button
+                    type="button"
+                    onClick={leave}
+                    className="flex items-center justify-center gap-1 px-2.5 sm:px-3.5 py-2 sm:py-2.5 rounded-xl bg-white/5 hover:bg-rose-500/20 text-gray-300 hover:text-rose-300 border border-white/10 font-semibold text-xs sm:text-sm transition-all"
+                    title="Exit to home"
+                  >
+                    <LogOut className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                    <span className="hidden xs:inline sm:inline">Home</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleStartChat}
+                    className="flex items-center justify-center gap-1.5 px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl bg-teal-500 hover:bg-teal-400 text-gray-950 font-bold text-xs sm:text-sm shadow-lg shadow-teal-500/20 transition-all hover:scale-[1.02] active:scale-[0.98]"
+                    title="Find next partner"
+                  >
+                    <span>Next</span>
+                    <span className="hidden md:inline-block text-[10px] font-semibold bg-black/20 text-black px-1.5 py-0.5 rounded">
+                      Esc
+                    </span>
+                  </button>
+                </div>
               )}
 
               {/* Center Input Form */}
