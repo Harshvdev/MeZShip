@@ -42,10 +42,24 @@ export function useChatSocket(
   const currentCampusesRef = useRef<string[]>([]);
   const currentRadiusRef = useRef<number>(2000);
 
-  const getWsHost = () => {
-    if (typeof window === "undefined") return "localhost:8787";
-    const loc = window.location;
-    return loc.hostname === "localhost" ? "localhost:8787" : loc.host;
+  const getWsBaseUrl = (path: string) => {
+    if (process.env.NEXT_PUBLIC_WS_URL) {
+      const base = process.env.NEXT_PUBLIC_WS_URL.replace(/\/+$/, "");
+      return `${base}${path}`;
+    }
+    if (process.env.NEXT_PUBLIC_WORKER_URL) {
+      const wsBase = process.env.NEXT_PUBLIC_WORKER_URL.replace(/^http/, "ws").replace(/\/+$/, "");
+      return `${wsBase}${path}`;
+    }
+    if (typeof window !== "undefined") {
+      const isLocal = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
+      if (isLocal) {
+        return `ws://localhost:8787${path}`;
+      }
+      const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+      return `${protocol}//${window.location.host}${path}`;
+    }
+    return `ws://localhost:8787${path}`;
   };
 
   const closeCurrentSocket = useCallback(() => {
@@ -63,8 +77,7 @@ export function useChatSocket(
     (matchId: string) => {
       closeCurrentSocket();
 
-      const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-      const wsUrl = `${protocol}//${getWsHost()}/ws/room/${matchId}?userId=${encodeURIComponent(
+      const wsUrl = `${getWsBaseUrl(`/ws/room/${matchId}`)}?userId=${encodeURIComponent(
         userId || ""
       )}&displayName=${encodeURIComponent(displayName || "")}&matchId=${matchId}&token=${encodeURIComponent(
         token || ""
@@ -128,8 +141,7 @@ export function useChatSocket(
       setChatState("SEARCHING");
       setStatusMessage("Searching for a compatible nearby match...");
 
-      const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-      const wsUrl = `${protocol}//${getWsHost()}/ws/queue?userId=${encodeURIComponent(
+      const wsUrl = `${getWsBaseUrl("/ws/queue")}?userId=${encodeURIComponent(
         userId
       )}&displayName=${encodeURIComponent(
         displayName || ""

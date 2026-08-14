@@ -19,7 +19,7 @@
   "migrations": [
     {
       "tag": "v1",
-      "new_classes": ["CampusMatcherDO", "MatchRoomDO"]
+      "new_sqlite_classes": ["CampusMatcherDO", "MatchRoomDO"]
     }
   ],
   "vars": {
