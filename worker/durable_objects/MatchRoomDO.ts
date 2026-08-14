@@ -1,29 +1,37 @@
 import { DurableObject } from "cloudflare:workers";
 import type { Env } from "../types";
 
-interface SessionParticipant {
-  ws: WebSocket;
-  userId: string;
-  displayName: string;
-}
-
 interface MessageRateBucket {
   timestamps: number[];
 }
 
+interface MatchContext {
+  matchId: string;
+  userA: string;
+  userB: string;
+  createdAt: number;
+  endedAt: number | null;
+}
+
+interface SocketAttachment {
+  userId: string;
+  displayName: string;
+  matchId: string;
+}
+
 export class MatchRoomDO extends DurableObject<Env> {
-  private participants: Map<string, SessionParticipant> = new Map();
   private rateLimits: Map<string, MessageRateBucket> = new Map();
-  private matchContext: {
-    matchId: string;
-    userA: string;
-    userB: string;
-    createdAt: number;
-    endedAt: number | null;
-  } | null = null;
+  private matchContext: MatchContext | null = null;
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
+  }
+
+  private async getMatchContext(): Promise<MatchContext | null> {
+    if (!this.matchContext) {
+      this.matchContext = (await this.ctx.storage.get<MatchContext>("matchContext")) || null;
+    }
+    return this.matchContext;
   }
 
   async fetch(request: Request): Promise<Response> {
@@ -42,26 +50,26 @@ export class MatchRoomDO extends DurableObject<Env> {
         return new Response("Missing parameters", { status: 400 });
       }
 
+      // Persist attachment on server WebSocket for hibernation resilience
+      const attachment: SocketAttachment = { userId, displayName, matchId };
+      server.serializeAttachment(attachment);
       this.ctx.acceptWebSocket(server, [userId]);
 
-      this.participants.set(userId, {
-        ws: server,
-        userId,
-        displayName,
-      });
-
-      if (!this.matchContext) {
-        this.matchContext = {
+      let matchCtx = await this.getMatchContext();
+      if (!matchCtx) {
+        matchCtx = {
           matchId,
           userA: userId,
           userB: "",
           createdAt: Date.now(),
           endedAt: null,
         };
-        this.ctx.storage.put("matchContext", this.matchContext);
-      } else if (!this.matchContext.userB && this.matchContext.userA !== userId) {
-        this.matchContext.userB = userId;
-        this.ctx.storage.put("matchContext", this.matchContext);
+        this.matchContext = matchCtx;
+        await this.ctx.storage.put("matchContext", matchCtx);
+      } else if (!matchCtx.userB && matchCtx.userA !== userId) {
+        matchCtx.userB = userId;
+        this.matchContext = matchCtx;
+        await this.ctx.storage.put("matchContext", matchCtx);
       }
 
       server.send(
@@ -72,8 +80,9 @@ export class MatchRoomDO extends DurableObject<Env> {
         })
       );
 
-      // If both participants are connected, send connected notification
-      if (this.participants.size === 2) {
+      // If both participants are connected, broadcast connected notification
+      const activeSockets = this.ctx.getWebSockets();
+      if (activeSockets.length >= 2) {
         this.broadcast({
           type: "partner_connected",
           message: "You are now chatting! Say hello.",
@@ -86,17 +95,15 @@ export class MatchRoomDO extends DurableObject<Env> {
     // 2. Context verification endpoint for context-bound reporting
     if (url.pathname === "/verify_match" && request.method === "POST") {
       const body: { reporterId: string; reportedId: string } = await request.json();
-      if (!this.matchContext) {
-        this.matchContext = (await this.ctx.storage.get("matchContext")) || null;
-      }
+      const matchCtx = await this.getMatchContext();
 
-      if (!this.matchContext) {
+      if (!matchCtx) {
         return new Response(JSON.stringify({ valid: false, reason: "Match not found" }), {
           status: 404,
         });
       }
 
-      const { userA, userB, endedAt } = this.matchContext;
+      const { userA, userB, endedAt } = matchCtx;
       const isParticipants =
         (userA === body.reporterId && userB === body.reportedId) ||
         (userB === body.reporterId && userA === body.reportedId);
@@ -116,7 +123,7 @@ export class MatchRoomDO extends DurableObject<Env> {
         );
       }
 
-      return new Response(JSON.stringify({ valid: true, matchId: this.matchContext.matchId }), {
+      return new Response(JSON.stringify({ valid: true, matchId: matchCtx.matchId }), {
         status: 200,
       });
     }
@@ -127,8 +134,21 @@ export class MatchRoomDO extends DurableObject<Env> {
   async webSocketMessage(ws: WebSocket, message: string | ArrayBuffer) {
     try {
       const data = typeof message === "string" ? JSON.parse(message) : {};
+
+      // Keepalive ping/pong handler
+      if (data.type === "ping") {
+        try {
+          ws.send(JSON.stringify({ type: "pong", timestamp: Date.now() }));
+        } catch {}
+        return;
+      }
+
       const senderTags = this.ctx.getTags(ws);
-      const senderId = senderTags[0];
+      let senderId = senderTags[0];
+      if (!senderId) {
+        const attachment = ws.deserializeAttachment() as SocketAttachment | null;
+        senderId = attachment?.userId || "";
+      }
 
       if (!senderId) return;
 
@@ -158,7 +178,7 @@ export class MatchRoomDO extends DurableObject<Env> {
           return;
         }
 
-        // Forward to other participant (never persisted to database)
+        // Forward to all other participants across hibernations
         const payload = JSON.stringify({
           type: "message",
           id: `msg_${crypto.randomUUID()}`,
@@ -167,19 +187,20 @@ export class MatchRoomDO extends DurableObject<Env> {
           timestamp: Date.now(),
         });
 
-        for (const [id, participant] of this.participants.entries()) {
-          if (id !== senderId) {
+        const activeSockets = this.ctx.getWebSockets();
+        for (const socket of activeSockets) {
+          if (socket !== ws) {
             try {
-              participant.ws.send(payload);
+              socket.send(payload);
             } catch (e) {
               console.error("Message forwarding error:", e);
             }
           }
         }
       } else if (data.type === "skip") {
-        this.handleSkip(senderId, "skip");
+        await this.handleSkip(ws, senderId, "skip");
       } else if (data.type === "leave") {
-        this.handleSkip(senderId, "leave");
+        await this.handleSkip(ws, senderId, "leave");
       }
     } catch (err) {
       console.error("MatchRoom WS error:", err);
@@ -188,22 +209,20 @@ export class MatchRoomDO extends DurableObject<Env> {
 
   async webSocketClose(ws: WebSocket, code: number, reason: string, wasClean: boolean) {
     const senderTags = this.ctx.getTags(ws);
-    const senderId = senderTags[0];
-    if (senderId) {
-      if (this.participants.has(senderId)) {
-        this.participants.delete(senderId);
-        if (this.participants.size > 0) {
-          this.handleSkip(senderId, "disconnect");
-        }
-      }
+    let senderId = senderTags[0];
+    if (!senderId) {
+      const attachment = ws.deserializeAttachment() as SocketAttachment | null;
+      senderId = attachment?.userId || "";
     }
+    await this.handleSkip(ws, senderId, "disconnect");
   }
 
-  private handleSkip(initiatorId: string, reason: "skip" | "leave" | "disconnect" = "skip") {
-    if (this.matchContext && !this.matchContext.endedAt) {
-      this.matchContext.endedAt = Date.now();
+  private async handleSkip(sourceWs: WebSocket, initiatorId: string, reason: "skip" | "leave" | "disconnect" = "skip") {
+    const matchCtx = await this.getMatchContext();
+    if (matchCtx && !matchCtx.endedAt) {
+      matchCtx.endedAt = Date.now();
       try {
-        this.ctx.storage.put("matchContext", this.matchContext);
+        await this.ctx.storage.put("matchContext", matchCtx);
       } catch {}
     }
 
@@ -214,31 +233,31 @@ export class MatchRoomDO extends DurableObject<Env> {
       defaultMsg = "Your partner disconnected.";
     }
 
-    // Notify the other participant that their partner left/skipped
-    for (const [id, participant] of this.participants.entries()) {
-      if (id !== initiatorId) {
+    const payload = JSON.stringify({
+      type: "partner_skipped",
+      reason,
+      message: defaultMsg,
+    });
+
+    // Notify other connected sockets
+    const activeSockets = this.ctx.getWebSockets();
+    for (const socket of activeSockets) {
+      if (socket !== sourceWs) {
         try {
-          participant.ws.send(
-            JSON.stringify({
-              type: "partner_skipped",
-              reason,
-              message: defaultMsg,
-            })
-          );
+          socket.send(payload);
         } catch (e) {
           console.error("Error notifying skipped partner:", e);
         }
       }
     }
-
-    this.participants.clear();
   }
 
   private broadcast(payload: any) {
     const msg = JSON.stringify(payload);
-    for (const participant of this.participants.values()) {
+    const activeSockets = this.ctx.getWebSockets();
+    for (const socket of activeSockets) {
       try {
-        participant.ws.send(msg);
+        socket.send(msg);
       } catch (e) {
         console.error("Broadcast error:", e);
       }

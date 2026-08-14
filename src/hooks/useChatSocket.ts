@@ -47,6 +47,9 @@ export function useChatSocket(
   const currentRadiusRef = useRef<number>(5000);
   const activeMatchIdRef = useRef<string | null>(null);
   const autoReconnectTimerRef = useRef<any>(null);
+  const pingIntervalRef = useRef<any>(null);
+  const watchdogIntervalRef = useRef<any>(null);
+  const lastHeartbeatResponseRef = useRef<number>(Date.now());
 
   const getWsBaseUrl = (path: string) => {
     if (process.env.NEXT_PUBLIC_WS_URL) {
@@ -69,6 +72,14 @@ export function useChatSocket(
   };
 
   const closeCurrentSocket = useCallback(() => {
+    if (pingIntervalRef.current) {
+      clearInterval(pingIntervalRef.current);
+      pingIntervalRef.current = null;
+    }
+    if (watchdogIntervalRef.current) {
+      clearInterval(watchdogIntervalRef.current);
+      watchdogIntervalRef.current = null;
+    }
     if (autoReconnectTimerRef.current) {
       clearTimeout(autoReconnectTimerRef.current);
       autoReconnectTimerRef.current = null;
@@ -82,6 +93,34 @@ export function useChatSocket(
       } catch {}
       wsRef.current = null;
     }
+  }, []);
+
+  const startHeartbeat = useCallback((ws: WebSocket) => {
+    lastHeartbeatResponseRef.current = Date.now();
+
+    if (pingIntervalRef.current) clearInterval(pingIntervalRef.current);
+    pingIntervalRef.current = setInterval(() => {
+      if (ws.readyState === WebSocket.OPEN) {
+        try {
+          ws.send(JSON.stringify({ type: "ping" }));
+        } catch (e) {
+          console.warn("Ping send error:", e);
+        }
+      }
+    }, 20000);
+
+    if (watchdogIntervalRef.current) clearInterval(watchdogIntervalRef.current);
+    watchdogIntervalRef.current = setInterval(() => {
+      if (ws.readyState === WebSocket.OPEN) {
+        // If no message or pong received in 45s, treat connection as dead
+        if (Date.now() - lastHeartbeatResponseRef.current > 45000) {
+          console.warn("WebSocket watchdog timeout: no traffic in 45s. Reconnecting...");
+          try {
+            ws.close();
+          } catch {}
+        }
+      }
+    }, 5000);
   }, []);
 
   // Connect to Active Match Room
@@ -103,11 +142,18 @@ export function useChatSocket(
       ws.onopen = () => {
         setChatState("MATCHED");
         setStatusMessage("Connected! Say hello.");
+        startHeartbeat(ws);
       };
 
       ws.onmessage = (event) => {
         try {
+          lastHeartbeatResponseRef.current = Date.now();
           const data: WebSocketServerMessage = JSON.parse(event.data);
+
+          if (data.type === "pong") {
+            return;
+          }
+
           if (data.type === "message") {
             setMessages((prev) => [
               ...prev,
@@ -193,7 +239,7 @@ export function useChatSocket(
         console.error("Room WS error:", err);
       };
     },
-    [userId, displayName, token, closeCurrentSocket]
+    [userId, displayName, token, closeCurrentSocket, startHeartbeat]
   );
 
   // Connect to Queue
@@ -221,9 +267,19 @@ export function useChatSocket(
       const ws = new WebSocket(wsUrl);
       wsRef.current = ws;
 
+      ws.onopen = () => {
+        startHeartbeat(ws);
+      };
+
       ws.onmessage = (event) => {
         try {
+          lastHeartbeatResponseRef.current = Date.now();
           const data: WebSocketServerMessage = JSON.parse(event.data);
+
+          if (data.type === "pong") {
+            return;
+          }
+
           if (data.type === "match_found") {
             setCurrentMatchId(data.matchId);
             activeMatchIdRef.current = data.matchId;
@@ -263,14 +319,19 @@ export function useChatSocket(
         setChatState("ERROR");
       };
     },
-    [userId, displayName, token, userLat, userLng, closeCurrentSocket, connectToRoom]
+    [userId, displayName, token, userLat, userLng, closeCurrentSocket, connectToRoom, startHeartbeat]
   );
 
   // Send a message to active partner
   const sendMessage = useCallback(
     (text: string) => {
       const trimmed = text.trim();
-      if (!trimmed || !wsRef.current || chatState !== "MATCHED") return;
+      if (!trimmed || chatState !== "MATCHED") return;
+
+      if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
+        setStatusMessage("Connection interrupted. Reconnecting...");
+        return;
+      }
 
       // Optimistic local add
       const tempId = `temp_${Date.now()}`;
@@ -285,12 +346,16 @@ export function useChatSocket(
         },
       ]);
 
-      wsRef.current.send(
-        JSON.stringify({
-          type: "message",
-          text: trimmed,
-        })
-      );
+      try {
+        wsRef.current.send(
+          JSON.stringify({
+            type: "message",
+            text: trimmed,
+          })
+        );
+      } catch (err) {
+        console.error("Failed to send message:", err);
+      }
     },
     [userId, chatState]
   );
@@ -300,7 +365,7 @@ export function useChatSocket(
     if (activeMatchIdRef.current) {
       updateMatchLogEnd(activeMatchIdRef.current, "self_skip");
     }
-    if (wsRef.current && chatState === "MATCHED") {
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN && chatState === "MATCHED") {
       try {
         wsRef.current.send(JSON.stringify({ type: "skip" }));
       } catch (e) {
@@ -320,7 +385,7 @@ export function useChatSocket(
     if (activeMatchIdRef.current) {
       updateMatchLogEnd(activeMatchIdRef.current, "self_leave");
     }
-    if (wsRef.current && chatState === "MATCHED") {
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN && chatState === "MATCHED") {
       try {
         wsRef.current.send(JSON.stringify({ type: "leave" }));
       } catch (e) {

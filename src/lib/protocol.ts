@@ -3,7 +3,8 @@ export type WebSocketClientMessage =
   | { type: "leave_queue"; userId: string }
   | { type: "message"; text: string }
   | { type: "skip" }
-  | { type: "leave" };
+  | { type: "leave" }
+  | { type: "ping" };
 
 export type WebSocketServerMessage =
   | { type: "queue_joined"; message: string; queuedAt: number; queueCount?: number; onlineCount?: number }
@@ -13,7 +14,8 @@ export type WebSocketServerMessage =
   | { type: "partner_connected"; message: string }
   | { type: "message"; id: string; senderId: string; text: string; timestamp: number }
   | { type: "partner_skipped"; message: string; reason?: "skip" | "leave" | "disconnect" }
-  | { type: "error"; message: string };
+  | { type: "error"; message: string }
+  | { type: "pong"; timestamp: number };
 
 export enum ReportReason {
   HARASSMENT = "HARASSMENT",

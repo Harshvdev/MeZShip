@@ -9,7 +9,6 @@ interface QueueEntry {
 }
 
 export class CampusMatcherDO extends DurableObject<Env> {
-  private queue: Map<string, QueueEntry> = new Map();
   private presence: Map<string, number> = new Map(); // userId -> lastSeen timestamp
   private campusBoundaries: Map<string, any> = new Map();
   private blockPairs: Set<string> = new Set(); // "blocker:blocked"
@@ -73,6 +72,23 @@ export class CampusMatcherDO extends DurableObject<Env> {
     }
   }
 
+  /**
+   * Retrieves active waiting users from WebSockets across DO hibernations
+   */
+  private getWaitingEntries(): QueueEntry[] {
+    const sockets = this.ctx.getWebSockets();
+    const entries: QueueEntry[] = [];
+    for (const ws of sockets) {
+      try {
+        const user = ws.deserializeAttachment() as WaitingUser | null;
+        if (user && user.userId) {
+          entries.push({ ws, user });
+        }
+      } catch {}
+    }
+    return entries;
+  }
+
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
 
@@ -93,8 +109,6 @@ export class CampusMatcherDO extends DurableObject<Env> {
         return new Response("Missing userId", { status: 400 });
       }
 
-      this.ctx.acceptWebSocket(server, [userId]);
-
       const waitingUser: WaitingUser = {
         userId,
         displayName,
@@ -105,18 +119,22 @@ export class CampusMatcherDO extends DurableObject<Env> {
         queuedAt: Date.now(),
       };
 
-      this.queue.set(userId, { ws: server, user: waitingUser });
+      // Hibernation-safe attachment and acceptance
+      server.serializeAttachment(waitingUser);
+      this.ctx.acceptWebSocket(server, [userId]);
+
       this.presence.set(userId, Date.now());
       this.cleanPresence();
 
-      const totalOnline = Math.max(1, this.presence.size, this.queue.size);
+      const waitingEntries = this.getWaitingEntries();
+      const totalOnline = Math.max(1, this.presence.size, waitingEntries.length);
 
       server.send(
         JSON.stringify({
           type: "queue_joined",
           message: "Searching for a compatible nearby match...",
           queuedAt: waitingUser.queuedAt,
-          queueCount: this.queue.size,
+          queueCount: waitingEntries.length,
           onlineCount: totalOnline,
         })
       );
@@ -129,11 +147,12 @@ export class CampusMatcherDO extends DurableObject<Env> {
 
     if (url.pathname === "/stats" || url.pathname.endsWith("/stats")) {
       this.cleanPresence();
-      const totalOnline = Math.max(1, this.presence.size, this.queue.size);
+      const queueCount = this.getWaitingEntries().length;
+      const totalOnline = Math.max(1, this.presence.size, queueCount);
       return new Response(
         JSON.stringify({
           onlineCount: totalOnline,
-          queueCount: this.queue.size,
+          queueCount,
         }),
         {
           headers: { "Content-Type": "application/json" },
@@ -149,10 +168,11 @@ export class CampusMatcherDO extends DurableObject<Env> {
         }
       } catch {}
       this.cleanPresence();
+      const queueCount = this.getWaitingEntries().length;
       return new Response(
         JSON.stringify({
-          onlineCount: Math.max(1, this.presence.size, this.queue.size),
-          queueCount: this.queue.size,
+          onlineCount: Math.max(1, this.presence.size, queueCount),
+          queueCount,
         }),
         { headers: { "Content-Type": "application/json" } }
       );
@@ -181,18 +201,29 @@ export class CampusMatcherDO extends DurableObject<Env> {
   async webSocketMessage(ws: WebSocket, message: string | ArrayBuffer) {
     try {
       const data = typeof message === "string" ? JSON.parse(message) : {};
+
+      // Keepalive ping/pong handler
+      if (data.type === "ping") {
+        try {
+          ws.send(JSON.stringify({ type: "pong", timestamp: Date.now() }));
+        } catch {}
+        return;
+      }
+
       if (data.type === "leave_queue") {
-        const userId = data.userId;
-        if (userId) {
-          this.queue.delete(userId);
+        try {
+          ws.serializeAttachment(null);
           ws.send(JSON.stringify({ type: "queue_left" }));
-        }
+          ws.close(1000, "Left queue");
+        } catch {}
       } else if (data.type === "update_location") {
-        const entry = this.queue.get(data.userId);
-        if (entry) {
-          entry.user.lat = data.lat;
-          entry.user.lng = data.lng;
-          this.tryMatch(data.userId);
+        const current = ws.deserializeAttachment() as WaitingUser | null;
+        if (current) {
+          current.lat = data.lat;
+          current.lng = data.lng;
+          ws.serializeAttachment(current);
+          await this.ensureBoundaries();
+          this.tryMatch(current.userId);
         }
       }
     } catch (e) {
@@ -201,12 +232,9 @@ export class CampusMatcherDO extends DurableObject<Env> {
   }
 
   async webSocketClose(ws: WebSocket, code: number, reason: string, wasClean: boolean) {
-    for (const [userId, entry] of this.queue.entries()) {
-      if (entry.ws === ws) {
-        this.queue.delete(userId);
-        break;
-      }
-    }
+    try {
+      ws.serializeAttachment(null);
+    } catch {}
   }
 
   private isBlocked(userA: string, userB: string): boolean {
@@ -225,8 +253,9 @@ export class CampusMatcherDO extends DurableObject<Env> {
   }
 
   private tryMatch(candidateId: string) {
-    const candidate = this.queue.get(candidateId);
-    if (!candidate) return;
+    const waitingEntries = this.getWaitingEntries();
+    const candidateEntry = waitingEntries.find((e) => e.user.userId === candidateId);
+    if (!candidateEntry) return;
 
     interface CandidateMatchOption {
       otherId: string;
@@ -238,7 +267,8 @@ export class CampusMatcherDO extends DurableObject<Env> {
 
     const eligibleMatches: CandidateMatchOption[] = [];
 
-    for (const [otherId, other] of this.queue.entries()) {
+    for (const other of waitingEntries) {
+      const otherId = other.user.userId;
       if (otherId === candidateId) continue;
 
       // 1. Check blocking relationships
@@ -248,15 +278,15 @@ export class CampusMatcherDO extends DurableObject<Env> {
 
       // 2. Check mutual campus or open proximity preferences
       const candidateHasCampusFilter =
-        candidate.user.campusIds.length > 0 &&
-        !candidate.user.campusIds.includes("all") &&
-        !candidate.user.campusIds.includes("*");
+        candidateEntry.user.campusIds.length > 0 &&
+        !candidateEntry.user.campusIds.includes("all") &&
+        !candidateEntry.user.campusIds.includes("*");
       const otherHasCampusFilter =
         other.user.campusIds.length > 0 &&
         !other.user.campusIds.includes("all") &&
         !other.user.campusIds.includes("*");
 
-      const sharedCampuses = candidate.user.campusIds.filter((cid) =>
+      const sharedCampuses = candidateEntry.user.campusIds.filter((cid) =>
         other.user.campusIds.includes(cid)
       );
 
@@ -269,21 +299,21 @@ export class CampusMatcherDO extends DurableObject<Env> {
 
       // 3. Proximity calculation (Haversine formula)
       const distance = haversineDistanceMeters(
-        candidate.user.lat,
-        candidate.user.lng,
+        candidateEntry.user.lat,
+        candidateEntry.user.lng,
         other.user.lat,
         other.user.lng
       );
 
       const maxAllowedDistance = Math.min(
-        candidate.user.maxRadiusMeters || 5000,
+        candidateEntry.user.maxRadiusMeters || 5000,
         other.user.maxRadiusMeters || 5000
       );
 
       // Distance check: must be within max allowed distance (default 5 km)
       // If either user doesn't have GPS coordinates (lat/lng = 0), allow connecting
       const hasCoords =
-        (candidate.user.lat !== 0 || candidate.user.lng !== 0) &&
+        (candidateEntry.user.lat !== 0 || candidateEntry.user.lng !== 0) &&
         (other.user.lat !== 0 || other.user.lng !== 0);
 
       if (hasCoords && distance > maxAllowedDistance) {
@@ -326,9 +356,13 @@ export class CampusMatcherDO extends DurableObject<Env> {
     // MATCH FOUND!
     const matchId = `match_${crypto.randomUUID()}`;
 
-    // Remove both from queue
-    this.queue.delete(candidateId);
-    this.queue.delete(best.otherId);
+    // Clear attachments immediately so neither candidate is matched again concurrently
+    try {
+      candidateEntry.ws.serializeAttachment(null);
+    } catch {}
+    try {
+      best.other.ws.serializeAttachment(null);
+    } catch {}
 
     // Record interaction timestamp for circular tie-breaker memory
     this.recordMatch(candidateId, best.otherId);
@@ -350,13 +384,13 @@ export class CampusMatcherDO extends DurableObject<Env> {
       campusId: best.validCampusId,
       distanceMeters: Math.round(best.distance),
       partner: {
-        userId: candidate.user.userId,
-        displayName: candidate.user.displayName,
+        userId: candidateEntry.user.userId,
+        displayName: candidateEntry.user.displayName,
       },
     };
 
     try {
-      candidate.ws.send(JSON.stringify(matchPayloadA));
+      candidateEntry.ws.send(JSON.stringify(matchPayloadA));
     } catch (e) {
       console.error("Failed to notify candidate A:", e);
     }
