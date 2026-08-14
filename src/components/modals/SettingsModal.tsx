@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { X, Dices, Check, UserX, Trash2 } from "lucide-react";
 import { CampusSelector, type CampusOption } from "@/components/matching/CampusSelector";
+import { getApiUrl } from "@/lib/api";
 
 interface BlockedUser {
   blocked_user_id: string;
@@ -52,7 +53,7 @@ export function SettingsModal({
   const fetchBlockedUsers = async () => {
     if (!token) return;
     try {
-      const res = await fetch("/api/blocks", {
+      const res = await fetch(getApiUrl("/api/blocks"), {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (res.ok) {
@@ -67,7 +68,7 @@ export function SettingsModal({
   const handleUnblock = async (blockedUserId: string) => {
     if (!token) return;
     try {
-      const res = await fetch(`/api/blocks/${blockedUserId}`, {
+      const res = await fetch(getApiUrl(`/api/blocks/${blockedUserId}`), {
         method: "DELETE",
         headers: { Authorization: `Bearer ${token}` },
       });

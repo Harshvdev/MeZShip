@@ -13,6 +13,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useGeolocation } from "@/hooks/useGeolocation";
 import { useChatSocket } from "@/hooks/useChatSocket";
 import type { ReportReason } from "@/lib/protocol";
+import { getApiUrl } from "@/lib/api";
 import {
   Send,
   MapPin,
@@ -106,7 +107,7 @@ export default function Home() {
   useEffect(() => {
     async function fetchStats() {
       try {
-        const res = await fetch("/api/stats");
+        const res = await fetch(getApiUrl("/api/stats"));
         if (res.ok) {
           const data = (await res.json()) as { onlineCount?: number; queueCount?: number };
           if (typeof data.onlineCount === "number" && setOnlineCount) {
@@ -120,7 +121,7 @@ export default function Home() {
     async function sendHeartbeat() {
       if (!token) return;
       try {
-        await fetch("/api/presence", {
+        await fetch(getApiUrl("/api/presence"), {
           method: "POST",
           headers: { Authorization: `Bearer ${token}` },
         });
@@ -143,7 +144,7 @@ export default function Home() {
       setCampusesLoading(true);
       try {
         const queryParams = lat && lng ? `?lat=${lat}&lng=${lng}` : "";
-        const res = await fetch(`/api/campuses${queryParams}`);
+        const res = await fetch(getApiUrl(`/api/campuses${queryParams}`));
         if (res.ok) {
           const data = (await res.json()) as { campuses?: CampusOption[] };
           if (data.campuses) {
@@ -169,7 +170,7 @@ export default function Home() {
     async function checkUserStatus() {
       try {
         // Preferences
-        const prefRes = await fetch("/api/preferences", {
+        const prefRes = await fetch(getApiUrl("/api/preferences"), {
           headers: { Authorization: `Bearer ${token}` },
         });
         if (prefRes.ok) {
@@ -180,7 +181,7 @@ export default function Home() {
         }
 
         // Ban Check
-        const banRes = await fetch("/api/bans/check", {
+        const banRes = await fetch(getApiUrl("/api/bans/check"), {
           headers: { Authorization: `Bearer ${token}` },
         });
         if (banRes.ok) {
@@ -202,7 +203,7 @@ export default function Home() {
     setSelectedCampusIds(ids);
     if (!token) return;
     try {
-      await fetch("/api/preferences", {
+      await fetch(getApiUrl("/api/preferences"), {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

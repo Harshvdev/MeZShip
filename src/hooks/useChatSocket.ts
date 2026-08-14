@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import type { WebSocketServerMessage, ReportReason } from "@/lib/protocol";
 import { saveMatchLog, updateMatchLogEnd, markMatchReported } from "@/lib/matchLogs";
+import { getApiUrl } from "@/lib/api";
 
 export type ChatState =
   | "IDLE"
@@ -52,13 +53,19 @@ export function useChatSocket(
   const lastHeartbeatResponseRef = useRef<number>(Date.now());
 
   const getWsBaseUrl = (path: string) => {
+    const cleanPath = path.startsWith("/") ? path : `/${path}`;
     if (process.env.NEXT_PUBLIC_WS_URL) {
-      const base = process.env.NEXT_PUBLIC_WS_URL.replace(/\/+$/, "");
-      return `${base}${path}`;
+      const base = process.env.NEXT_PUBLIC_WS_URL.trim()
+        .replace(/['"]+/g, "")
+        .replace(/\/+$/, "");
+      return `${base}${cleanPath}`;
     }
     if (process.env.NEXT_PUBLIC_WORKER_URL) {
-      const wsBase = process.env.NEXT_PUBLIC_WORKER_URL.replace(/^http/, "ws").replace(/\/+$/, "");
-      return `${wsBase}${path}`;
+      const wsBase = process.env.NEXT_PUBLIC_WORKER_URL.trim()
+        .replace(/['"]+/g, "")
+        .replace(/^http/, "ws")
+        .replace(/\/+$/, "");
+      return `${wsBase}${cleanPath}`;
     }
     if (typeof window !== "undefined") {
       const hostname = window.location.hostname;
@@ -69,12 +76,12 @@ export function useChatSocket(
         hostname.startsWith("10.") ||
         /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(hostname);
       if (isLocal) {
-        return `ws://${hostname}:8787${path}`;
+        return `ws://${hostname}:8787${cleanPath}`;
       }
       const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-      return `${protocol}//${window.location.host}${path}`;
+      return `${protocol}//${window.location.host}${cleanPath}`;
     }
-    return `ws://localhost:8787${path}`;
+    return `ws://localhost:8787${cleanPath}`;
   };
 
   const closeCurrentSocket = useCallback(() => {
@@ -413,7 +420,7 @@ export function useChatSocket(
       const idToBlock = targetId || partner?.userId;
       if (!idToBlock || !token) return false;
       try {
-        const res = await fetch("/api/blocks", {
+        const res = await fetch(getApiUrl("/api/blocks"), {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -440,7 +447,7 @@ export function useChatSocket(
     async (reason: ReportReason, details?: string) => {
       if (!partner || !currentMatchId || !token) return false;
       try {
-        const res = await fetch("/api/reports", {
+        const res = await fetch(getApiUrl("/api/reports"), {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -472,7 +479,7 @@ export function useChatSocket(
     async (matchId: string, reportedUserId: string, reason: ReportReason, details?: string) => {
       if (!token) return false;
       try {
-        const res = await fetch("/api/reports", {
+        const res = await fetch(getApiUrl("/api/reports"), {
           method: "POST",
           headers: {
             "Content-Type": "application/json",

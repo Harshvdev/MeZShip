@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import type { User } from "@supabase/supabase-js";
+import { getApiUrl } from "@/lib/api";
 
 export interface UserProfile {
   user_id: string;
@@ -58,7 +59,7 @@ export function useAuth() {
 
   async function fetchProfile(accessToken: string, userId: string) {
     try {
-      const res = await fetch("/api/profile", {
+      const res = await fetch(getApiUrl("/api/profile"), {
         headers: {
           Authorization: `Bearer ${accessToken}`,
         },
@@ -89,7 +90,7 @@ export function useAuth() {
   async function updateDisplayName(newDisplayName: string) {
     if (!token) return false;
     try {
-      const res = await fetch("/api/profile", {
+      const res = await fetch(getApiUrl("/api/profile"), {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
