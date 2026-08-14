@@ -32,6 +32,41 @@ function errorResponse(message: string, status = 400) {
   return jsonResponse({ error: message }, status);
 }
 
+const banCache = new Map<string, { isBanned: boolean; ban: any; expiresAt: number }>();
+
+function invalidateBanCache(userId: string) {
+  banCache.delete(userId);
+}
+
+async function checkUserBanCached(userId: string, env: Env): Promise<{ isBanned: boolean; ban: any }> {
+  const now = Date.now();
+  const cached = banCache.get(userId);
+  if (cached && cached.expiresAt > now) {
+    return { isBanned: cached.isBanned, ban: cached.ban };
+  }
+
+  try {
+    const prisma = getPrisma(env);
+    const activeBan = await prisma.userBan.findFirst({
+      where: {
+        user_id: userId,
+        OR: [{ expires_at: null }, { expires_at: { gt: new Date() } }],
+      },
+    });
+
+    const isBanned = Boolean(activeBan);
+    banCache.set(userId, {
+      isBanned,
+      ban: activeBan || null,
+      expiresAt: now + (isBanned ? 15000 : 60000), // Cache not-banned for 60s, banned for 15s
+    });
+    return { isBanned, ban: activeBan || null };
+  } catch (err) {
+    console.error("Error checking user ban:", err);
+    return { isBanned: cached ? cached.isBanned : false, ban: cached ? cached.ban : null };
+  }
+}
+
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     if (request.method === "OPTIONS") {
@@ -51,16 +86,9 @@ export default {
         return new Response("Unauthorized", { status: 401 });
       }
 
-      // Check ban state before allowing WebSocket connections
-      const prisma = getPrisma(env);
-      const activeBan = await prisma.userBan.findFirst({
-        where: {
-          user_id: authUser.userId,
-          OR: [{ expires_at: null }, { expires_at: { gt: new Date() } }],
-        },
-      });
-
-      if (activeBan) {
+      // Fast cached ban check before allowing WebSocket connections
+      const banStatus = await checkUserBanCached(authUser.userId, env);
+      if (banStatus.isBanned) {
         return new Response("Account is currently suspended", { status: 403 });
       }
 
@@ -266,22 +294,17 @@ export default {
 
     const prisma = getPrisma(env);
 
-    // Ban Check Middleware
-    const activeBan = await prisma.userBan.findFirst({
-      where: {
-        user_id: authUser.userId,
-        OR: [{ expires_at: null }, { expires_at: { gt: new Date() } }],
-      },
-    });
+    // Ban Check Middleware (Cached)
+    const banStatus = await checkUserBanCached(authUser.userId, env);
 
     if (url.pathname === "/api/bans/check" && request.method === "GET") {
       return jsonResponse({
-        isBanned: !!activeBan,
-        ban: activeBan || null,
+        isBanned: banStatus.isBanned,
+        ban: banStatus.ban,
       });
     }
 
-    if (activeBan) {
+    if (banStatus.isBanned) {
       return errorResponse("Your account is currently banned.", 403);
     }
 
@@ -542,6 +565,10 @@ export default {
             reason: `Exceeded 24-hour ban threshold (${distinctCount} distinct reports).`,
           },
         });
+      }
+
+      if (distinctCount >= t24h) {
+        invalidateBanCache(reportedUserId);
       }
 
       return jsonResponse({

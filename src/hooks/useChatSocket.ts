@@ -204,11 +204,11 @@ export function useChatSocket(
               },
             ]);
 
-            // Auto-reconnect seamlessly after short status cue (1.2s)
+            // Auto-reconnect seamlessly after brief status cue (250ms)
             if (autoReconnectTimerRef.current) clearTimeout(autoReconnectTimerRef.current);
             autoReconnectTimerRef.current = setTimeout(() => {
               startMatching(currentCampusesRef.current, currentRadiusRef.current);
-            }, 1200);
+            }, 250);
           } else if (data.type === "error") {
             setStatusMessage(data.message);
           }
@@ -240,7 +240,7 @@ export function useChatSocket(
             if (autoReconnectTimerRef.current) clearTimeout(autoReconnectTimerRef.current);
             autoReconnectTimerRef.current = setTimeout(() => {
               startMatching(currentCampusesRef.current, currentRadiusRef.current);
-            }, 1200);
+            }, 250);
 
             return "PARTNER_SKIPPED";
           }
