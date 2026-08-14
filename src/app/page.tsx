@@ -535,6 +535,33 @@ export default function Home() {
                     </button>
                   </div>
                 </div>
+              ) : chatState === "ERROR" ? (
+                /* ERROR STATE */
+                <div className="flex-1 flex flex-col items-center justify-center text-center p-4 sm:p-6 animate-fade-in max-w-md mx-auto">
+                  <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-2xl bg-rose-500/10 border border-rose-500/20 text-rose-400 flex items-center justify-center mb-3 sm:mb-4">
+                    <AlertTriangle className="w-5 h-5 sm:w-6 sm:h-6" />
+                  </div>
+                  <h3 className="text-sm sm:text-base font-semibold text-white mb-1">
+                    Connection Issue
+                  </h3>
+                  <p className="text-[11px] sm:text-xs text-gray-400 mb-5 sm:mb-6">
+                    {statusMessage || "Unable to establish matchmaking connection. Please try again."}
+                  </p>
+                  <div className="flex items-center gap-2.5 sm:gap-3">
+                    <button
+                      onClick={leave}
+                      className="px-3.5 sm:px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-gray-300 text-xs font-medium transition-colors"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={handleStartChat}
+                      className="px-4 sm:px-5 py-2 rounded-xl bg-teal-500 hover:bg-teal-400 text-gray-950 text-xs font-bold shadow-lg shadow-teal-500/25 transition-all"
+                    >
+                      Retry
+                    </button>
+                  </div>
+                </div>
               ) : (
                 /* MATCHED ACTIVE MESSAGES STREAM */
                 <div className="flex-1 flex flex-col justify-between">

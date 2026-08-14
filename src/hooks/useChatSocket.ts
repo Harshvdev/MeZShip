@@ -61,9 +61,15 @@ export function useChatSocket(
       return `${wsBase}${path}`;
     }
     if (typeof window !== "undefined") {
-      const isLocal = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
+      const hostname = window.location.hostname;
+      const isLocal =
+        hostname === "localhost" ||
+        hostname === "127.0.0.1" ||
+        hostname.startsWith("192.168.") ||
+        hostname.startsWith("10.") ||
+        /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(hostname);
       if (isLocal) {
-        return `ws://localhost:8787${path}`;
+        return `ws://${hostname}:8787${path}`;
       }
       const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
       return `${protocol}//${window.location.host}${path}`;

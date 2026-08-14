@@ -277,26 +277,20 @@ export class CampusMatcherDO extends DurableObject<Env> {
         continue;
       }
 
-      // 2. Check mutual campus or open proximity preferences
-      const candidateHasCampusFilter =
-        candidateEntry.user.campusIds.length > 0 &&
-        !candidateEntry.user.campusIds.includes("all") &&
-        !candidateEntry.user.campusIds.includes("*");
-      const otherHasCampusFilter =
-        other.user.campusIds.length > 0 &&
-        !other.user.campusIds.includes("all") &&
-        !other.user.campusIds.includes("*");
-
+      // 2. Mutual campus or open proximity matching
       const sharedCampuses = candidateEntry.user.campusIds.filter((cid) =>
         other.user.campusIds.includes(cid)
       );
 
-      // If both users explicitly picked specific campuses and share none, skip
-      if (candidateHasCampusFilter && otherHasCampusFilter && sharedCampuses.length === 0) {
-        continue;
-      }
-
-      const validCampusId = sharedCampuses.length > 0 ? sharedCampuses[0] : "nearby";
+      // Determine appropriate campus scope badge
+      const validCampusId =
+        sharedCampuses.length > 0
+          ? sharedCampuses[0]
+          : candidateEntry.user.campusIds.length > 0
+          ? candidateEntry.user.campusIds[0]
+          : other.user.campusIds.length > 0
+          ? other.user.campusIds[0]
+          : "nearby";
 
       // 3. Proximity calculation (Haversine formula)
       const distance = haversineDistanceMeters(
@@ -368,7 +362,7 @@ export class CampusMatcherDO extends DurableObject<Env> {
     // Record interaction timestamp for circular tie-breaker memory
     this.recordMatch(candidateId, best.otherId);
 
-    const matchPayloadA = {
+    const matchPayloadA = JSON.stringify({
       type: "match_found",
       matchId,
       campusId: best.validCampusId,
@@ -377,9 +371,9 @@ export class CampusMatcherDO extends DurableObject<Env> {
         userId: best.other.user.userId,
         displayName: best.other.user.displayName,
       },
-    };
+    });
 
-    const matchPayloadB = {
+    const matchPayloadB = JSON.stringify({
       type: "match_found",
       matchId,
       campusId: best.validCampusId,
@@ -388,18 +382,23 @@ export class CampusMatcherDO extends DurableObject<Env> {
         userId: candidateEntry.user.userId,
         displayName: candidateEntry.user.displayName,
       },
+    });
+
+    const notify = () => {
+      try {
+        candidateEntry.ws.send(matchPayloadA);
+      } catch (e) {
+        console.error("Failed to notify candidate A:", e);
+      }
+
+      try {
+        best.other.ws.send(matchPayloadB);
+      } catch (e) {
+        console.error("Failed to notify candidate B:", e);
+      }
     };
 
-    try {
-      candidateEntry.ws.send(JSON.stringify(matchPayloadA));
-    } catch (e) {
-      console.error("Failed to notify candidate A:", e);
-    }
-
-    try {
-      best.other.ws.send(JSON.stringify(matchPayloadB));
-    } catch (e) {
-      console.error("Failed to notify candidate B:", e);
-    }
+    // Defer notification to microtask queue so WebSocket accept finishes cleanly
+    queueMicrotask(notify);
   }
 }

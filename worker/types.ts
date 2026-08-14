@@ -6,7 +6,9 @@ export interface Env {
   SUPABASE_JWKS_URL?: string;
   SUPABASE_URL?: string;
   SUPABASE_SECRET_KEY?: string;
+  SUPABASE_JWT_SECRET?: string;
   NEXT_PUBLIC_SUPABASE_URL?: string;
+  NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY?: string;
   NEXT_PUBLIC_APP_URL?: string;
   REPORT_THRESHOLD_24H?: string;
   REPORT_THRESHOLD_7D?: string;
