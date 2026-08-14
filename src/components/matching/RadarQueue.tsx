@@ -14,8 +14,8 @@ export function RadarQueue({
   onCancel,
   statusMessage = "Searching for someone nearby...",
   selectedCampusesCount,
-  queueCount = 1,
-  onlineCount = 1,
+  queueCount = 0,
+  onlineCount = 0,
 }: RadarQueueProps) {
   return (
     <div className="flex flex-col items-center justify-center min-h-[480px] p-8 text-center animate-fade-in">

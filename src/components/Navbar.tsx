@@ -18,7 +18,7 @@ export function Navbar({
   onOpenSettings,
   onOpenLogs,
   onSignOut,
-  onlineCount = 1,
+  onlineCount = 0,
 }: NavbarProps) {
   const [showMenu, setShowMenu] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -61,7 +61,7 @@ export function Navbar({
               <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
             </span>
             <span>
-              {onlineCount > 0 ? onlineCount : 1}{" "}
+              {onlineCount}{" "}
               <span className="hidden xs:inline">online</span>
             </span>
           </div>

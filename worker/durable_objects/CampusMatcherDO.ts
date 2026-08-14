@@ -127,15 +127,16 @@ export class CampusMatcherDO extends DurableObject<Env> {
       this.cleanPresence();
 
       const waitingEntries = this.getWaitingEntries();
-      const totalOnline = Math.max(1, this.presence.size, waitingEntries.length);
+      const totalOnline = Math.max(0, this.presence.size, waitingEntries.length);
+      const otherOnline = Math.max(0, totalOnline - 1);
 
       server.send(
         JSON.stringify({
           type: "queue_joined",
           message: "Searching for a compatible nearby match...",
           queuedAt: waitingUser.queuedAt,
-          queueCount: waitingEntries.length,
-          onlineCount: totalOnline,
+          queueCount: Math.max(0, waitingEntries.length - 1),
+          onlineCount: otherOnline,
         })
       );
 
@@ -148,7 +149,7 @@ export class CampusMatcherDO extends DurableObject<Env> {
     if (url.pathname === "/stats" || url.pathname.endsWith("/stats")) {
       this.cleanPresence();
       const queueCount = this.getWaitingEntries().length;
-      const totalOnline = Math.max(1, this.presence.size, queueCount);
+      const totalOnline = Math.max(0, this.presence.size, queueCount);
       return new Response(
         JSON.stringify({
           onlineCount: totalOnline,
@@ -171,7 +172,7 @@ export class CampusMatcherDO extends DurableObject<Env> {
       const queueCount = this.getWaitingEntries().length;
       return new Response(
         JSON.stringify({
-          onlineCount: Math.max(1, this.presence.size, queueCount),
+          onlineCount: Math.max(0, this.presence.size, queueCount),
           queueCount,
         }),
         { headers: { "Content-Type": "application/json" } }

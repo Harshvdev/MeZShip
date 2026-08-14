@@ -110,7 +110,8 @@ export default function Home() {
         if (res.ok) {
           const data = (await res.json()) as { onlineCount?: number; queueCount?: number };
           if (typeof data.onlineCount === "number" && setOnlineCount) {
-            setOnlineCount(data.onlineCount);
+            const countExcludingUser = token ? Math.max(0, data.onlineCount - 1) : data.onlineCount;
+            setOnlineCount(countExcludingUser);
           }
         }
       } catch {}

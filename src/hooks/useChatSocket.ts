@@ -40,7 +40,7 @@ export function useChatSocket(
   const [statusMessage, setStatusMessage] = useState<string>("");
   const [partnerLeaveReason, setPartnerLeaveReason] = useState<"skip" | "leave" | "disconnect" | null>(null);
   const [queueCount, setQueueCount] = useState<number>(0);
-  const [onlineCount, setOnlineCount] = useState<number>(1);
+  const [onlineCount, setOnlineCount] = useState<number>(0);
 
   const wsRef = useRef<WebSocket | null>(null);
   const currentCampusesRef = useRef<string[]>([]);

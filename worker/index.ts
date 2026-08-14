@@ -98,7 +98,7 @@ export default {
         const stats = await statsRes.json();
         return jsonResponse(stats);
       } catch {
-        return jsonResponse({ onlineCount: 1, queueCount: 0 });
+        return jsonResponse({ onlineCount: 0, queueCount: 0 });
       }
     }
 
