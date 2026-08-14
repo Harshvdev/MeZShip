@@ -9,6 +9,7 @@ import { ReportModal } from "@/components/modals/ReportModal";
 import { BlockConfirmModal } from "@/components/modals/BlockConfirmModal";
 import { SettingsModal } from "@/components/modals/SettingsModal";
 import { LocationModal } from "@/components/modals/LocationModal";
+import { MatchLogsModal } from "@/components/modals/MatchLogsModal";
 import { useAuth } from "@/hooks/useAuth";
 import { useGeolocation } from "@/hooks/useGeolocation";
 import { useChatSocket } from "@/hooks/useChatSocket";
@@ -52,6 +53,12 @@ export default function Home() {
   const [showReport, setShowReport] = useState(false);
   const [showBlock, setShowBlock] = useState(false);
   const [showLocationModal, setShowLocationModal] = useState(false);
+  const [showMatchLogs, setShowMatchLogs] = useState(false);
+  const [pastReportTarget, setPastReportTarget] = useState<{
+    matchId: string;
+    reportedUserId: string;
+    displayName: string;
+  } | null>(null);
 
   const {
     chatState,
@@ -68,6 +75,7 @@ export default function Home() {
     leave,
     blockPartner,
     reportPartner,
+    reportPastMatch,
   } = useChatSocket(profile?.user_id, profile?.display_name, token, lat, lng);
 
   // Poll live stats & send presence heartbeat
@@ -209,6 +217,7 @@ export default function Home() {
         profile={profile}
         onlineCount={onlineCount}
         onOpenSettings={() => setShowSettings(true)}
+        onOpenLogs={() => setShowMatchLogs(true)}
         onSignOut={signOut}
       />
 
@@ -463,11 +472,34 @@ export default function Home() {
 
       <ReportModal
         isOpen={showReport}
-        onClose={() => setShowReport(false)}
+        onClose={() => {
+          setShowReport(false);
+          setPastReportTarget(null);
+        }}
         onSubmitReport={async (reason: ReportReason, details?: string) => {
+          if (pastReportTarget) {
+            return reportPastMatch(
+              pastReportTarget.matchId,
+              pastReportTarget.reportedUserId,
+              reason,
+              details
+            );
+          }
           return reportPartner(reason, details);
         }}
-        targetDisplayName={partner?.displayName}
+        targetDisplayName={pastReportTarget?.displayName || partner?.displayName}
+      />
+
+      <MatchLogsModal
+        isOpen={showMatchLogs}
+        onClose={() => setShowMatchLogs(false)}
+        onOpenReportForPastMatch={(matchId, reportedUserId, displayName) => {
+          setPastReportTarget({ matchId, reportedUserId, displayName });
+          setShowReport(true);
+        }}
+        onBlockUser={async (targetUserId) => {
+          return blockPartner(targetUserId);
+        }}
       />
 
       <BlockConfirmModal

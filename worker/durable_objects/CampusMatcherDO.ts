@@ -13,6 +13,7 @@ export class CampusMatcherDO extends DurableObject<Env> {
   private presence: Map<string, number> = new Map(); // userId -> lastSeen timestamp
   private campusBoundaries: Map<string, any> = new Map();
   private blockPairs: Set<string> = new Set(); // "blocker:blocked"
+  private matchHistory: Map<string, Map<string, number>> = new Map(); // userId -> (partnerId -> timestamp)
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
@@ -24,6 +25,35 @@ export class CampusMatcherDO extends DurableObject<Env> {
       if (ts < cutoff) {
         this.presence.delete(userId);
       }
+    }
+  }
+
+  private getLastMatchedTime(userA: string, userB: string): number | null {
+    const histA = this.matchHistory.get(userA);
+    if (histA && histA.has(userB)) {
+      return histA.get(userB)!;
+    }
+    const histB = this.matchHistory.get(userB);
+    if (histB && histB.has(userA)) {
+      return histB.get(userA)!;
+    }
+    return null;
+  }
+
+  private recordMatch(userA: string, userB: string) {
+    const now = Date.now();
+    if (!this.matchHistory.has(userA)) this.matchHistory.set(userA, new Map());
+    if (!this.matchHistory.has(userB)) this.matchHistory.set(userB, new Map());
+    this.matchHistory.get(userA)!.set(userB, now);
+    this.matchHistory.get(userB)!.set(userA, now);
+
+    // Prune history older than 24h
+    const cutoff = now - 86400000;
+    for (const [uid, partners] of this.matchHistory.entries()) {
+      for (const [pid, ts] of partners.entries()) {
+        if (ts < cutoff) partners.delete(pid);
+      }
+      if (partners.size === 0) this.matchHistory.delete(uid);
     }
   }
 
@@ -189,7 +219,6 @@ export class CampusMatcherDO extends DurableObject<Env> {
   private checkGeofence(user: WaitingUser, campusId: string): boolean {
     const boundary = this.campusBoundaries.get(campusId);
     if (!boundary) {
-      // If boundary not yet cached, allow candidate to proceed in dev
       return true;
     }
     return isCoordinateInsideCampus(user.lng, user.lat, boundary);
@@ -198,6 +227,16 @@ export class CampusMatcherDO extends DurableObject<Env> {
   private tryMatch(candidateId: string) {
     const candidate = this.queue.get(candidateId);
     if (!candidate) return;
+
+    interface CandidateMatchOption {
+      otherId: string;
+      other: QueueEntry;
+      validCampusId: string;
+      distance: number;
+      lastMatchedTime: number | null;
+    }
+
+    const eligibleMatches: CandidateMatchOption[] = [];
 
     for (const [otherId, other] of this.queue.entries()) {
       if (otherId === candidateId) continue;
@@ -215,11 +254,9 @@ export class CampusMatcherDO extends DurableObject<Env> {
         continue;
       }
 
-      // 3. Verify campus selection & proximity
-      // A match is valid if both users share campus interest and are within mutual radius
       const validCampusId = sharedCampuses[0];
 
-      // 4. Proximity calculation (Haversine formula)
+      // 3. Proximity calculation (Haversine formula)
       const distance = haversineDistanceMeters(
         candidate.user.lat,
         candidate.user.lng,
@@ -236,48 +273,81 @@ export class CampusMatcherDO extends DurableObject<Env> {
         continue;
       }
 
-      // MATCH FOUND!
-      const matchId = `match_${crypto.randomUUID()}`;
+      const lastMatchedTime = this.getLastMatchedTime(candidateId, otherId);
 
-      // Remove both from queue
-      this.queue.delete(candidateId);
-      this.queue.delete(otherId);
+      eligibleMatches.push({
+        otherId,
+        other,
+        validCampusId,
+        distance,
+        lastMatchedTime,
+      });
+    }
 
-      const matchPayloadA = {
-        type: "match_found",
-        matchId,
-        campusId: validCampusId,
-        distanceMeters: Math.round(distance),
-        partner: {
-          userId: other.user.userId,
-          displayName: other.user.displayName,
-        },
-      };
+    if (eligibleMatches.length === 0) return;
 
-      const matchPayloadB = {
-        type: "match_found",
-        matchId,
-        campusId: validCampusId,
-        distanceMeters: Math.round(distance),
-        partner: {
-          userId: candidate.user.userId,
-          displayName: candidate.user.displayName,
-        },
-      };
+    // Rank candidates by Circular Fair Matching:
+    // 1. Unseen users (never matched in session: lastMatchedTime === null) come first.
+    // 2. If all eligible users were matched, pick the one matched FURTHEST in the past (earliest lastMatchedTime).
+    // 3. Tie-breaker: Earlier queue arrival time.
+    eligibleMatches.sort((a, b) => {
+      if (a.lastMatchedTime === null && b.lastMatchedTime !== null) return -1;
+      if (a.lastMatchedTime !== null && b.lastMatchedTime === null) return 1;
 
-      try {
-        candidate.ws.send(JSON.stringify(matchPayloadA));
-      } catch (e) {
-        console.error("Failed to notify candidate A:", e);
+      if (a.lastMatchedTime === null && b.lastMatchedTime === null) {
+        return a.other.user.queuedAt - b.other.user.queuedAt;
       }
 
-      try {
-        other.ws.send(JSON.stringify(matchPayloadB));
-      } catch (e) {
-        console.error("Failed to notify candidate B:", e);
-      }
+      const timeDiff = (a.lastMatchedTime || 0) - (b.lastMatchedTime || 0);
+      if (timeDiff !== 0) return timeDiff;
 
-      return;
+      return a.other.user.queuedAt - b.other.user.queuedAt;
+    });
+
+    const best = eligibleMatches[0];
+
+    // MATCH FOUND!
+    const matchId = `match_${crypto.randomUUID()}`;
+
+    // Remove both from queue
+    this.queue.delete(candidateId);
+    this.queue.delete(best.otherId);
+
+    // Record interaction timestamp for circular tie-breaker memory
+    this.recordMatch(candidateId, best.otherId);
+
+    const matchPayloadA = {
+      type: "match_found",
+      matchId,
+      campusId: best.validCampusId,
+      distanceMeters: Math.round(best.distance),
+      partner: {
+        userId: best.other.user.userId,
+        displayName: best.other.user.displayName,
+      },
+    };
+
+    const matchPayloadB = {
+      type: "match_found",
+      matchId,
+      campusId: best.validCampusId,
+      distanceMeters: Math.round(best.distance),
+      partner: {
+        userId: candidate.user.userId,
+        displayName: candidate.user.displayName,
+      },
+    };
+
+    try {
+      candidate.ws.send(JSON.stringify(matchPayloadA));
+    } catch (e) {
+      console.error("Failed to notify candidate A:", e);
+    }
+
+    try {
+      best.other.ws.send(JSON.stringify(matchPayloadB));
+    } catch (e) {
+      console.error("Failed to notify candidate B:", e);
     }
   }
 }

@@ -1,17 +1,24 @@
 "use client";
 
 import Link from "next/link";
-import { Sparkles, Settings, LogOut, ShieldAlert } from "lucide-react";
+import { Sparkles, Settings, LogOut, ShieldAlert, Clock } from "lucide-react";
 import type { UserProfile } from "@/hooks/useAuth";
 
 interface NavbarProps {
   profile: UserProfile | null;
   onOpenSettings: () => void;
+  onOpenLogs?: () => void;
   onSignOut: () => void;
   onlineCount?: number;
 }
 
-export function Navbar({ profile, onOpenSettings, onSignOut, onlineCount = 1 }: NavbarProps) {
+export function Navbar({
+  profile,
+  onOpenSettings,
+  onOpenLogs,
+  onSignOut,
+  onlineCount = 1,
+}: NavbarProps) {
   return (
     <header className="w-full border-b border-white/10 glass-panel sticky top-0 z-40">
       <div className="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
@@ -31,7 +38,7 @@ export function Navbar({ profile, onOpenSettings, onSignOut, onlineCount = 1 }: 
         </Link>
 
         {/* User Identity & Controls */}
-        <div className="flex items-center gap-2.5 sm:gap-3">
+        <div className="flex items-center gap-2 sm:gap-2.5">
           {/* Live Online Badge */}
           <div
             title="Active campus users online right now"
@@ -46,9 +53,22 @@ export function Navbar({ profile, onOpenSettings, onSignOut, onlineCount = 1 }: 
 
           {profile ? (
             <>
+              {/* Recent Chats Log Button */}
+              {onOpenLogs && (
+                <button
+                  type="button"
+                  onClick={onOpenLogs}
+                  title="Recent Connections & Abuse Reports (24h)"
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs text-gray-300 hover:text-white transition-colors"
+                >
+                  <Clock className="w-3.5 h-3.5 text-indigo-400" />
+                  <span className="hidden sm:inline">Recent Chats</span>
+                </button>
+              )}
+
               <button
                 onClick={onOpenSettings}
-                className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 transition-colors text-sm"
+                className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 transition-colors text-xs sm:text-sm"
               >
                 <div className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
                 <span className="font-medium text-gray-200">{profile.display_name}</span>

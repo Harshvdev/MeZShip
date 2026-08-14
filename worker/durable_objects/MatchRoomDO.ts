@@ -58,8 +58,10 @@ export class MatchRoomDO extends DurableObject<Env> {
           createdAt: Date.now(),
           endedAt: null,
         };
+        this.ctx.storage.put("matchContext", this.matchContext);
       } else if (!this.matchContext.userB && this.matchContext.userA !== userId) {
         this.matchContext.userB = userId;
+        this.ctx.storage.put("matchContext", this.matchContext);
       }
 
       server.send(
@@ -85,6 +87,10 @@ export class MatchRoomDO extends DurableObject<Env> {
     if (url.pathname === "/verify_match" && request.method === "POST") {
       const body: { reporterId: string; reportedId: string } = await request.json();
       if (!this.matchContext) {
+        this.matchContext = (await this.ctx.storage.get("matchContext")) || null;
+      }
+
+      if (!this.matchContext) {
         return new Response(JSON.stringify({ valid: false, reason: "Match not found" }), {
           status: 404,
         });
@@ -102,10 +108,10 @@ export class MatchRoomDO extends DurableObject<Env> {
         );
       }
 
-      // Check grace period: valid if active or ended within last 120 seconds
-      if (endedAt && Date.now() - endedAt > 120000) {
+      // Check grace period: valid if active or ended within last 24 hours (86,400,000 ms)
+      if (endedAt && Date.now() - endedAt > 86400000) {
         return new Response(
-          JSON.stringify({ valid: false, reason: "Reporting window expired" }),
+          JSON.stringify({ valid: false, reason: "Reporting window expired (24 hours exceeded)" }),
           { status: 400 }
         );
       }
@@ -196,6 +202,9 @@ export class MatchRoomDO extends DurableObject<Env> {
   private handleSkip(initiatorId: string, reason: "skip" | "leave" | "disconnect" = "skip") {
     if (this.matchContext && !this.matchContext.endedAt) {
       this.matchContext.endedAt = Date.now();
+      try {
+        this.ctx.storage.put("matchContext", this.matchContext);
+      } catch {}
     }
 
     let defaultMsg = "Your partner skipped the chat.";

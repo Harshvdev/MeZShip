@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import type { WebSocketServerMessage, ReportReason } from "@/lib/protocol";
+import { saveMatchLog, updateMatchLogEnd, markMatchReported } from "@/lib/matchLogs";
 
 export type ChatState =
   | "IDLE"
@@ -44,6 +45,8 @@ export function useChatSocket(
   const wsRef = useRef<WebSocket | null>(null);
   const currentCampusesRef = useRef<string[]>([]);
   const currentRadiusRef = useRef<number>(2000);
+  const activeMatchIdRef = useRef<string | null>(null);
+  const autoReconnectTimerRef = useRef<any>(null);
 
   const getWsBaseUrl = (path: string) => {
     if (process.env.NEXT_PUBLIC_WS_URL) {
@@ -66,6 +69,10 @@ export function useChatSocket(
   };
 
   const closeCurrentSocket = useCallback(() => {
+    if (autoReconnectTimerRef.current) {
+      clearTimeout(autoReconnectTimerRef.current);
+      autoReconnectTimerRef.current = null;
+    }
     if (wsRef.current) {
       wsRef.current.onclose = null;
       wsRef.current.onerror = null;
@@ -82,6 +89,7 @@ export function useChatSocket(
     (matchId: string) => {
       closeCurrentSocket();
       setPartnerLeaveReason(null);
+      activeMatchIdRef.current = matchId;
 
       const wsUrl = `${getWsBaseUrl(`/ws/room/${matchId}`)}?userId=${encodeURIComponent(
         userId || ""
@@ -115,14 +123,17 @@ export function useChatSocket(
             const reason = data.reason || "skip";
             const noticeText =
               reason === "leave"
-                ? "👋 Partner left the chat."
+                ? "👋 Partner left. Connecting to next person..."
                 : reason === "disconnect"
-                ? "⚠️ Partner disconnected."
-                : "⚡ Partner skipped to next chat.";
+                ? "⚠️ Partner disconnected. Connecting to next person..."
+                : "⚡ Partner skipped. Connecting to next person...";
+
+            if (activeMatchIdRef.current) {
+              updateMatchLogEnd(activeMatchIdRef.current, reason);
+            }
 
             setPartnerLeaveReason(reason);
-            setChatState("PARTNER_SKIPPED");
-            setStatusMessage(data.message || noticeText);
+            setStatusMessage(noticeText);
             setMessages((prev) => [
               ...prev,
               {
@@ -133,6 +144,12 @@ export function useChatSocket(
                 timestamp: Date.now(),
               },
             ]);
+
+            // Auto-reconnect seamlessly after short status cue (1.2s)
+            if (autoReconnectTimerRef.current) clearTimeout(autoReconnectTimerRef.current);
+            autoReconnectTimerRef.current = setTimeout(() => {
+              startMatching(currentCampusesRef.current, currentRadiusRef.current);
+            }, 1200);
           } else if (data.type === "error") {
             setStatusMessage(data.message);
           }
@@ -144,18 +161,28 @@ export function useChatSocket(
       ws.onclose = () => {
         setChatState((prev) => {
           if (prev === "MATCHED") {
+            if (activeMatchIdRef.current) {
+              updateMatchLogEnd(activeMatchIdRef.current, "disconnect");
+            }
             setPartnerLeaveReason("disconnect");
-            setStatusMessage("Partner disconnected.");
+            setStatusMessage("Partner disconnected. Re-connecting...");
             setMessages((msgs) => [
               ...msgs,
               {
                 id: `sys_${Date.now()}`,
                 senderId: "system",
                 isSelf: false,
-                text: "⚠️ Partner disconnected from session.",
+                text: "⚠️ Partner disconnected. Re-connecting to next person...",
                 timestamp: Date.now(),
               },
             ]);
+
+            // Auto-reconnect
+            if (autoReconnectTimerRef.current) clearTimeout(autoReconnectTimerRef.current);
+            autoReconnectTimerRef.current = setTimeout(() => {
+              startMatching(currentCampusesRef.current, currentRadiusRef.current);
+            }, 1200);
+
             return "PARTNER_SKIPPED";
           }
           return prev;
@@ -199,6 +226,17 @@ export function useChatSocket(
           const data: WebSocketServerMessage = JSON.parse(event.data);
           if (data.type === "match_found") {
             setCurrentMatchId(data.matchId);
+            activeMatchIdRef.current = data.matchId;
+
+            // Save to 24h recent match logs
+            saveMatchLog({
+              matchId: data.matchId,
+              partnerUserId: data.partner.userId,
+              partnerDisplayName: data.partner.displayName,
+              campusId: data.campusId,
+              matchedAt: Date.now(),
+            });
+
             setPartner({
               userId: data.partner.userId,
               displayName: data.partner.displayName,
@@ -259,6 +297,9 @@ export function useChatSocket(
 
   // Skip current match and re-queue without reload
   const skip = useCallback(() => {
+    if (activeMatchIdRef.current) {
+      updateMatchLogEnd(activeMatchIdRef.current, "self_skip");
+    }
     if (wsRef.current && chatState === "MATCHED") {
       try {
         wsRef.current.send(JSON.stringify({ type: "skip" }));
@@ -272,6 +313,13 @@ export function useChatSocket(
 
   // Leave completely
   const leave = useCallback(() => {
+    if (autoReconnectTimerRef.current) {
+      clearTimeout(autoReconnectTimerRef.current);
+      autoReconnectTimerRef.current = null;
+    }
+    if (activeMatchIdRef.current) {
+      updateMatchLogEnd(activeMatchIdRef.current, "self_leave");
+    }
     if (wsRef.current && chatState === "MATCHED") {
       try {
         wsRef.current.send(JSON.stringify({ type: "leave" }));
@@ -289,28 +337,34 @@ export function useChatSocket(
   }, [chatState, closeCurrentSocket]);
 
   // Block partner
-  const blockPartner = useCallback(async () => {
-    if (!partner || !token) return false;
-    try {
-      const res = await fetch("/api/blocks", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ targetUserId: partner.userId }),
-      });
-      if (res.ok) {
-        skip();
-        return true;
+  const blockPartner = useCallback(
+    async (targetId?: string) => {
+      const idToBlock = targetId || partner?.userId;
+      if (!idToBlock || !token) return false;
+      try {
+        const res = await fetch("/api/blocks", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ targetUserId: idToBlock }),
+        });
+        if (res.ok) {
+          if (!targetId || targetId === partner?.userId) {
+            skip();
+          }
+          return true;
+        }
+        return false;
+      } catch {
+        return false;
       }
-      return false;
-    } catch {
-      return false;
-    }
-  }, [partner, token, skip]);
+    },
+    [partner, token, skip]
+  );
 
-  // Report partner
+  // Report partner (Active match)
   const reportPartner = useCallback(
     async (reason: ReportReason, details?: string) => {
       if (!partner || !currentMatchId || !token) return false;
@@ -330,6 +384,7 @@ export function useChatSocket(
         });
 
         if (res.ok) {
+          markMatchReported(currentMatchId);
           skip();
           return true;
         }
@@ -339,6 +394,37 @@ export function useChatSocket(
       }
     },
     [partner, currentMatchId, token, skip]
+  );
+
+  // Report a past match from the 24-hour log
+  const reportPastMatch = useCallback(
+    async (matchId: string, reportedUserId: string, reason: ReportReason, details?: string) => {
+      if (!token) return false;
+      try {
+        const res = await fetch("/api/reports", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            reportedUserId,
+            matchId,
+            reason,
+            details,
+          }),
+        });
+
+        if (res.ok) {
+          markMatchReported(matchId);
+          return true;
+        }
+        return false;
+      } catch {
+        return false;
+      }
+    },
+    [token]
   );
 
   useEffect(() => {
@@ -363,5 +449,6 @@ export function useChatSocket(
     leave,
     blockPartner,
     reportPartner,
+    reportPastMatch,
   };
 }
