@@ -31,6 +31,7 @@ export default function Home() {
 
   const [campuses, setCampuses] = useState<CampusOption[]>([]);
   const [selectedCampusIds, setSelectedCampusIds] = useState<string[]>([]);
+  const [campusesLoading, setCampusesLoading] = useState<boolean>(true);
   const [matchingRadius, setMatchingRadius] = useState<number>(2000);
   const [isBanned, setIsBanned] = useState(false);
   const [banReason, setBanReason] = useState<string | null>(null);
@@ -53,39 +54,40 @@ export default function Home() {
     reportPartner,
   } = useChatSocket(profile?.user_id, profile?.display_name, token, lat, lng);
 
-  // 1. Fetch available campuses
+  // 1. Fetch available campuses based on user location
   useEffect(() => {
     async function loadCampuses() {
+      setCampusesLoading(true);
       try {
-        const res = await fetch("/api/campuses");
+        const queryParams = lat && lng ? `?lat=${lat}&lng=${lng}` : "";
+        const res = await fetch(`/api/campuses${queryParams}`);
         if (res.ok) {
           const data = (await res.json()) as { campuses?: CampusOption[] };
-          if (data.campuses && data.campuses.length > 0) {
+          if (data.campuses) {
             setCampuses(data.campuses);
-            if (selectedCampusIds.length === 0) {
-              setSelectedCampusIds(data.campuses.map((c) => c.id));
+            if (data.campuses.length > 0) {
+              setSelectedCampusIds((prev) => {
+                if (prev.length === 0) {
+                  // Pre-select inside campus or first 2 closest
+                  const inside = data.campuses!.filter((c) => c.isInside).map((c) => c.id);
+                  return inside.length > 0 ? inside : data.campuses!.slice(0, 2).map((c) => c.id);
+                }
+                return prev;
+              });
             }
           }
         } else {
-          // Fallback demo campuses
-          const fallback = [
-            { id: "c1", name: "Downtown University Campus", type: "UNIVERSITY" },
-            { id: "c2", name: "North Tech College Campus", type: "COLLEGE" },
-          ];
-          setCampuses(fallback);
-          setSelectedCampusIds(["c1", "c2"]);
+          setCampuses([]);
         }
-      } catch {
-        const fallback = [
-          { id: "c1", name: "Downtown University Campus", type: "UNIVERSITY" },
-          { id: "c2", name: "North Tech College Campus", type: "COLLEGE" },
-        ];
-        setCampuses(fallback);
-        setSelectedCampusIds(["c1", "c2"]);
+      } catch (err) {
+        console.error("Failed to load campuses:", err);
+        setCampuses([]);
+      } finally {
+        setCampusesLoading(false);
       }
     }
     loadCampuses();
-  }, []);
+  }, [lat, lng]);
 
   // 2. Fetch User Campus Preferences & Check Ban State
   useEffect(() => {
@@ -302,6 +304,7 @@ export default function Home() {
                 campuses={campuses}
                 selectedIds={selectedCampusIds}
                 onChange={handleUpdateCampuses}
+                loading={campusesLoading}
               />
 
               {/* Matching Radius Option */}

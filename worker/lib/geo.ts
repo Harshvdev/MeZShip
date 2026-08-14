@@ -56,3 +56,31 @@ export function haversineDistanceMeters(
 
   return R * c;
 }
+
+/**
+ * Computes the approximate center [lat, lng] of a GeoJSON polygon boundary
+ */
+export function getCampusCenter(boundary: any): { lat: number; lng: number } | null {
+  try {
+    let coords: number[][] = [];
+    if (boundary?.type === "Polygon" && boundary.coordinates?.[0]) {
+      coords = boundary.coordinates[0];
+    } else if (boundary?.type === "MultiPolygon" && boundary.coordinates?.[0]?.[0]) {
+      coords = boundary.coordinates[0][0];
+    }
+    if (!coords || coords.length === 0) return null;
+    let sumLng = 0;
+    let sumLat = 0;
+    for (const c of coords) {
+      sumLng += c[0];
+      sumLat += c[1];
+    }
+    return {
+      lng: sumLng / coords.length,
+      lat: sumLat / coords.length,
+    };
+  } catch {
+    return null;
+  }
+}
+

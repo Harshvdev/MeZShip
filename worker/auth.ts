@@ -19,11 +19,14 @@ export async function verifySupabaseToken(
   authHeader: string | null,
   env: Env
 ): Promise<AuthenticatedUser | null> {
-  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+  if (!authHeader) {
     return null;
   }
 
-  const token = authHeader.slice(7).trim();
+  let token = authHeader.trim();
+  if (token.startsWith("Bearer ")) {
+    token = token.slice(7).trim();
+  }
   if (!token) return null;
 
   const jwksUrl =

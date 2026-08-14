@@ -1,13 +1,14 @@
 import { DurableObject } from "cloudflare:workers";
 import type { Env, WaitingUser } from "../types";
 import { isCoordinateInsideCampus, haversineDistanceMeters } from "../lib/geo";
+import { getPrisma } from "../lib/db";
 
 interface QueueEntry {
   ws: WebSocket;
   user: WaitingUser;
 }
 
-export class CampusMatcherDO extends DurableObject {
+export class CampusMatcherDO extends DurableObject<Env> {
   private queue: Map<string, QueueEntry> = new Map();
   private campusBoundaries: Map<string, any> = new Map();
   private blockPairs: Set<string> = new Set(); // "blocker:blocked"
@@ -16,11 +17,28 @@ export class CampusMatcherDO extends DurableObject {
     super(ctx, env);
   }
 
+  private async ensureBoundaries() {
+    if (this.campusBoundaries.size > 0) return;
+    try {
+      const prisma = getPrisma(this.env);
+      const campuses = await prisma.campus.findMany({
+        where: { active: true },
+        select: { id: true, boundary: true },
+      });
+      for (const c of campuses) {
+        this.campusBoundaries.set(c.id, c.boundary);
+      }
+    } catch (e) {
+      console.error("Failed to preload boundaries in DO:", e);
+    }
+  }
+
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
 
     // Handle WebSocket upgrade for matchmaking queue
     if (request.headers.get("Upgrade") === "websocket") {
+      await this.ensureBoundaries();
       const pair = new WebSocketPair();
       const [client, server] = Object.values(pair);
 

@@ -4,6 +4,11 @@ import { CampusMatcherDO } from "./durable_objects/CampusMatcherDO";
 import { MatchRoomDO } from "./durable_objects/MatchRoomDO";
 import type { Env } from "./types";
 import { BanType, ReportReason } from "@prisma/client";
+import {
+  isCoordinateInsideCampus,
+  haversineDistanceMeters,
+  getCampusCenter,
+} from "./lib/geo";
 
 export { CampusMatcherDO, MatchRoomDO };
 
@@ -96,6 +101,44 @@ export default {
           boundary: true,
         },
       });
+
+      const latStr = url.searchParams.get("lat");
+      const lngStr = url.searchParams.get("lng");
+      const radiusParam = url.searchParams.get("radius");
+      const maxRadiusMeters = radiusParam ? parseFloat(radiusParam) : 80000; // 80km radius discovery
+
+      if (latStr && lngStr) {
+        const userLat = parseFloat(latStr);
+        const userLng = parseFloat(lngStr);
+
+        if (!isNaN(userLat) && !isNaN(userLng)) {
+          const enrichedCampuses = campuses
+            .map((c) => {
+              const isInside = isCoordinateInsideCampus(userLng, userLat, c.boundary);
+              const center = getCampusCenter(c.boundary);
+              const distanceMeters = center
+                ? Math.round(haversineDistanceMeters(userLat, userLng, center.lat, center.lng))
+                : 0;
+              return {
+                id: c.id,
+                name: c.name,
+                type: c.type,
+                boundary: c.boundary,
+                distanceMeters,
+                isInside,
+              };
+            })
+            .filter((c) => c.isInside || c.distanceMeters <= maxRadiusMeters)
+            .sort((a, b) => {
+              if (a.isInside && !b.isInside) return -1;
+              if (!a.isInside && b.isInside) return 1;
+              return a.distanceMeters - b.distanceMeters;
+            });
+
+          return jsonResponse({ campuses: enrichedCampuses });
+        }
+      }
+
       return jsonResponse({ campuses });
     }
 

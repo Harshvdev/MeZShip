@@ -11,7 +11,7 @@ interface MessageRateBucket {
   timestamps: number[];
 }
 
-export class MatchRoomDO extends DurableObject {
+export class MatchRoomDO extends DurableObject<Env> {
   private participants: Map<string, SessionParticipant> = new Map();
   private rateLimits: Map<string, MessageRateBucket> = new Map();
   private matchContext: {
