@@ -5,6 +5,9 @@ export const metadata: Metadata = {
   title: "MeZShip — Spontaneous Campus 1-to-1 Random Chat",
   description:
     "A local random-chat platform for spontaneous 1-to-1 conversations with people who are currently inside selected campuses.",
+  icons: {
+    icon: "/favicon.svg",
+  },
 };
 
 export default function RootLayout({
