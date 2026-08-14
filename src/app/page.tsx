@@ -32,7 +32,7 @@ import { useRouter } from "next/navigation";
 
 export default function Home() {
   const router = useRouter();
-  const { user, profile, token, updateDisplayName, signOut } = useAuth();
+  const { user, profile, token, loading: authLoading, updateDisplayName, signOut } = useAuth();
   const {
     lat,
     lng,
@@ -105,10 +105,14 @@ export default function Home() {
 
   // Poll live stats & send presence heartbeat
   useEffect(() => {
+    if (authLoading) return;
+
+    let isMounted = true;
+
     async function fetchStats() {
       try {
         const res = await fetch(getApiUrl("/api/stats"));
-        if (res.ok) {
+        if (res.ok && isMounted) {
           const data = (await res.json()) as { onlineCount?: number; queueCount?: number };
           if (typeof data.onlineCount === "number" && setOnlineCount) {
             const countExcludingUser = token ? Math.max(0, data.onlineCount - 1) : data.onlineCount;
@@ -128,15 +132,18 @@ export default function Home() {
       } catch {}
     }
 
-    fetchStats();
     sendHeartbeat();
+    fetchStats();
     const interval = setInterval(() => {
-      fetchStats();
       sendHeartbeat();
+      fetchStats();
     }, 12000);
 
-    return () => clearInterval(interval);
-  }, [token, setOnlineCount]);
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, [token, authLoading, setOnlineCount]);
 
   // Fetch available campuses based on user location
   useEffect(() => {
