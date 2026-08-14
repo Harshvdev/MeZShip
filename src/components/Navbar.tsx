@@ -8,9 +8,10 @@ interface NavbarProps {
   profile: UserProfile | null;
   onOpenSettings: () => void;
   onSignOut: () => void;
+  onlineCount?: number;
 }
 
-export function Navbar({ profile, onOpenSettings, onSignOut }: NavbarProps) {
+export function Navbar({ profile, onOpenSettings, onSignOut, onlineCount = 1 }: NavbarProps) {
   return (
     <header className="w-full border-b border-white/10 glass-panel sticky top-0 z-40">
       <div className="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
@@ -30,7 +31,19 @@ export function Navbar({ profile, onOpenSettings, onSignOut }: NavbarProps) {
         </Link>
 
         {/* User Identity & Controls */}
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2.5 sm:gap-3">
+          {/* Live Online Badge */}
+          <div
+            title="Active campus users online right now"
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-xs text-emerald-400 font-medium"
+          >
+            <span className="relative flex h-2 w-2">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+            </span>
+            <span>{onlineCount > 0 ? onlineCount : 1} Online</span>
+          </div>
+
           {profile ? (
             <>
               <button

@@ -7,6 +7,16 @@ interface MessageBubbleProps {
 }
 
 export function MessageBubble({ message }: MessageBubbleProps) {
+  if (message.senderId === "system") {
+    return (
+      <div className="flex justify-center my-3 animate-fade-in">
+        <div className="px-3.5 py-1.5 rounded-full bg-amber-500/10 border border-amber-500/20 text-xs text-amber-300 font-medium text-center shadow-sm">
+          {message.text}
+        </div>
+      </div>
+    );
+  }
+
   const { isSelf, text, timestamp } = message;
   const timeString = new Date(timestamp).toLocaleTimeString([], {
     hour: "2-digit",

@@ -6,12 +6,16 @@ interface RadarQueueProps {
   onCancel: () => void;
   statusMessage?: string;
   selectedCampusesCount: number;
+  queueCount?: number;
+  onlineCount?: number;
 }
 
 export function RadarQueue({
   onCancel,
   statusMessage = "Searching for someone nearby...",
   selectedCampusesCount,
+  queueCount = 1,
+  onlineCount = 1,
 }: RadarQueueProps) {
   return (
     <div className="flex flex-col items-center justify-center min-h-[480px] p-8 text-center animate-fade-in">
@@ -33,16 +37,24 @@ export function RadarQueue({
         </div>
       </div>
 
-      <h3 className="text-xl font-semibold text-white mb-2">
+      <h3 className="text-xl font-semibold text-white mb-1">
         Scanning Selected Campuses
       </h3>
-      <p className="text-sm text-gray-400 max-w-sm mb-4">
+      <p className="text-sm text-gray-400 max-w-sm mb-3">
         {statusMessage}
       </p>
 
-      <div className="flex items-center gap-2 text-xs text-indigo-400 bg-indigo-500/10 px-3 py-1.5 rounded-full border border-indigo-500/20 mb-8">
-        <MapPin className="w-3.5 h-3.5" />
-        <span>Searching across {selectedCampusesCount} active campus geofence(s)</span>
+      {/* Online & Queue Badges */}
+      <div className="flex flex-wrap items-center justify-center gap-2 mb-6">
+        <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-xs text-emerald-300 font-medium">
+          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+          <span>{onlineCount} student{onlineCount === 1 ? "" : "s"} online</span>
+        </div>
+
+        <div className="flex items-center gap-1.5 text-xs text-indigo-400 bg-indigo-500/10 px-3 py-1 rounded-full border border-indigo-500/20">
+          <MapPin className="w-3.5 h-3.5" />
+          <span>{selectedCampusesCount} campus geofence{selectedCampusesCount === 1 ? "" : "s"}</span>
+        </div>
       </div>
 
       <button

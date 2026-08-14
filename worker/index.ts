@@ -90,6 +90,39 @@ export default {
       return jsonResponse({ status: "healthy", timestamp: new Date().toISOString() });
     }
 
+    if (url.pathname === "/api/stats" && request.method === "GET") {
+      try {
+        const matcherId = env.CAMPUS_MATCHER.idFromName("global_campus_matcher");
+        const matcher = env.CAMPUS_MATCHER.get(matcherId);
+        const statsRes = await matcher.fetch(new Request("http://internal/stats"));
+        const stats = await statsRes.json();
+        return jsonResponse(stats);
+      } catch {
+        return jsonResponse({ onlineCount: 1, queueCount: 0 });
+      }
+    }
+
+    if (url.pathname === "/api/presence" && request.method === "POST") {
+      try {
+        const authHeader = request.headers.get("Authorization");
+        const authUser = await verifySupabaseToken(authHeader, env);
+        if (authUser) {
+          const matcherId = env.CAMPUS_MATCHER.idFromName("global_campus_matcher");
+          const matcher = env.CAMPUS_MATCHER.get(matcherId);
+          await matcher.fetch(
+            new Request("http://internal/heartbeat", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ userId: authUser.userId }),
+            })
+          );
+        }
+        return jsonResponse({ success: true });
+      } catch {
+        return jsonResponse({ success: false });
+      }
+    }
+
     if (url.pathname === "/api/campuses" && request.method === "GET") {
       const prisma = getPrisma(env);
 

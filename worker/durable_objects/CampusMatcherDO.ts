@@ -10,11 +10,21 @@ interface QueueEntry {
 
 export class CampusMatcherDO extends DurableObject<Env> {
   private queue: Map<string, QueueEntry> = new Map();
+  private presence: Map<string, number> = new Map(); // userId -> lastSeen timestamp
   private campusBoundaries: Map<string, any> = new Map();
   private blockPairs: Set<string> = new Set(); // "blocker:blocked"
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
+  }
+
+  private cleanPresence() {
+    const cutoff = Date.now() - 45000;
+    for (const [userId, ts] of this.presence.entries()) {
+      if (ts < cutoff) {
+        this.presence.delete(userId);
+      }
+    }
   }
 
   private async ensureBoundaries() {
@@ -66,12 +76,18 @@ export class CampusMatcherDO extends DurableObject<Env> {
       };
 
       this.queue.set(userId, { ws: server, user: waitingUser });
+      this.presence.set(userId, Date.now());
+      this.cleanPresence();
+
+      const totalOnline = Math.max(1, this.presence.size, this.queue.size);
 
       server.send(
         JSON.stringify({
           type: "queue_joined",
           message: "Searching for a compatible nearby match...",
           queuedAt: waitingUser.queuedAt,
+          queueCount: this.queue.size,
+          onlineCount: totalOnline,
         })
       );
 
@@ -79,6 +95,37 @@ export class CampusMatcherDO extends DurableObject<Env> {
       this.tryMatch(userId);
 
       return new Response(null, { status: 101, webSocket: client });
+    }
+
+    if (url.pathname === "/stats" || url.pathname.endsWith("/stats")) {
+      this.cleanPresence();
+      const totalOnline = Math.max(1, this.presence.size, this.queue.size);
+      return new Response(
+        JSON.stringify({
+          onlineCount: totalOnline,
+          queueCount: this.queue.size,
+        }),
+        {
+          headers: { "Content-Type": "application/json" },
+        }
+      );
+    }
+
+    if (url.pathname === "/heartbeat" || url.pathname.endsWith("/heartbeat")) {
+      try {
+        const body: { userId?: string } = await request.json();
+        if (body.userId) {
+          this.presence.set(body.userId, Date.now());
+        }
+      } catch {}
+      this.cleanPresence();
+      return new Response(
+        JSON.stringify({
+          onlineCount: Math.max(1, this.presence.size, this.queue.size),
+          queueCount: this.queue.size,
+        }),
+        { headers: { "Content-Type": "application/json" } }
+      );
     }
 
     if (url.pathname === "/update_campuses" && request.method === "POST") {

@@ -170,8 +170,10 @@ export class MatchRoomDO extends DurableObject<Env> {
             }
           }
         }
-      } else if (data.type === "skip" || data.type === "leave") {
-        this.handleSkip(senderId);
+      } else if (data.type === "skip") {
+        this.handleSkip(senderId, "skip");
+      } else if (data.type === "leave") {
+        this.handleSkip(senderId, "leave");
       }
     } catch (err) {
       console.error("MatchRoom WS error:", err);
@@ -182,16 +184,25 @@ export class MatchRoomDO extends DurableObject<Env> {
     const senderTags = this.ctx.getTags(ws);
     const senderId = senderTags[0];
     if (senderId) {
-      this.participants.delete(senderId);
-      if (this.participants.size > 0) {
-        this.handleSkip(senderId);
+      if (this.participants.has(senderId)) {
+        this.participants.delete(senderId);
+        if (this.participants.size > 0) {
+          this.handleSkip(senderId, "disconnect");
+        }
       }
     }
   }
 
-  private handleSkip(initiatorId: string) {
+  private handleSkip(initiatorId: string, reason: "skip" | "leave" | "disconnect" = "skip") {
     if (this.matchContext && !this.matchContext.endedAt) {
       this.matchContext.endedAt = Date.now();
+    }
+
+    let defaultMsg = "Your partner skipped the chat.";
+    if (reason === "leave") {
+      defaultMsg = "Your partner left the conversation.";
+    } else if (reason === "disconnect") {
+      defaultMsg = "Your partner disconnected.";
     }
 
     // Notify the other participant that their partner left/skipped
@@ -201,7 +212,8 @@ export class MatchRoomDO extends DurableObject<Env> {
           participant.ws.send(
             JSON.stringify({
               type: "partner_skipped",
-              message: "Your partner skipped or left the chat.",
+              reason,
+              message: defaultMsg,
             })
           );
         } catch (e) {

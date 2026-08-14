@@ -37,6 +37,9 @@ export function useChatSocket(
   const [partner, setPartner] = useState<PartnerInfo | null>(null);
   const [currentMatchId, setCurrentMatchId] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState<string>("");
+  const [partnerLeaveReason, setPartnerLeaveReason] = useState<"skip" | "leave" | "disconnect" | null>(null);
+  const [queueCount, setQueueCount] = useState<number>(0);
+  const [onlineCount, setOnlineCount] = useState<number>(1);
 
   const wsRef = useRef<WebSocket | null>(null);
   const currentCampusesRef = useRef<string[]>([]);
@@ -67,7 +70,9 @@ export function useChatSocket(
       wsRef.current.onclose = null;
       wsRef.current.onerror = null;
       wsRef.current.onmessage = null;
-      wsRef.current.close();
+      try {
+        wsRef.current.close();
+      } catch {}
       wsRef.current = null;
     }
   }, []);
@@ -76,6 +81,7 @@ export function useChatSocket(
   const connectToRoom = useCallback(
     (matchId: string) => {
       closeCurrentSocket();
+      setPartnerLeaveReason(null);
 
       const wsUrl = `${getWsBaseUrl(`/ws/room/${matchId}`)}?userId=${encodeURIComponent(
         userId || ""
@@ -106,8 +112,27 @@ export function useChatSocket(
               },
             ]);
           } else if (data.type === "partner_skipped") {
+            const reason = data.reason || "skip";
+            const noticeText =
+              reason === "leave"
+                ? "👋 Partner left the chat."
+                : reason === "disconnect"
+                ? "⚠️ Partner disconnected."
+                : "⚡ Partner skipped to next chat.";
+
+            setPartnerLeaveReason(reason);
             setChatState("PARTNER_SKIPPED");
-            setStatusMessage("Your partner skipped the chat.");
+            setStatusMessage(data.message || noticeText);
+            setMessages((prev) => [
+              ...prev,
+              {
+                id: `sys_${Date.now()}`,
+                senderId: "system",
+                isSelf: false,
+                text: noticeText,
+                timestamp: Date.now(),
+              },
+            ]);
           } else if (data.type === "error") {
             setStatusMessage(data.message);
           }
@@ -117,7 +142,24 @@ export function useChatSocket(
       };
 
       ws.onclose = () => {
-        // Socket closed
+        setChatState((prev) => {
+          if (prev === "MATCHED") {
+            setPartnerLeaveReason("disconnect");
+            setStatusMessage("Partner disconnected.");
+            setMessages((msgs) => [
+              ...msgs,
+              {
+                id: `sys_${Date.now()}`,
+                senderId: "system",
+                isSelf: false,
+                text: "⚠️ Partner disconnected from session.",
+                timestamp: Date.now(),
+              },
+            ]);
+            return "PARTNER_SKIPPED";
+          }
+          return prev;
+        });
       };
 
       ws.onerror = (err) => {
@@ -166,6 +208,12 @@ export function useChatSocket(
             connectToRoom(data.matchId);
           } else if (data.type === "queue_joined") {
             setStatusMessage(data.message);
+            if (typeof data.queueCount === "number") {
+              setQueueCount(data.queueCount);
+            }
+            if (typeof data.onlineCount === "number") {
+              setOnlineCount(data.onlineCount);
+            }
           }
         } catch (e) {
           console.error("Queue WS Parse error:", e);
@@ -224,13 +272,21 @@ export function useChatSocket(
 
   // Leave completely
   const leave = useCallback(() => {
+    if (wsRef.current && chatState === "MATCHED") {
+      try {
+        wsRef.current.send(JSON.stringify({ type: "leave" }));
+      } catch (e) {
+        console.error("Leave send error:", e);
+      }
+    }
     closeCurrentSocket();
     setChatState("IDLE");
     setMessages([]);
     setPartner(null);
     setCurrentMatchId(null);
     setStatusMessage("");
-  }, [closeCurrentSocket]);
+    setPartnerLeaveReason(null);
+  }, [chatState, closeCurrentSocket]);
 
   // Block partner
   const blockPartner = useCallback(async () => {
@@ -297,6 +353,10 @@ export function useChatSocket(
     partner,
     currentMatchId,
     statusMessage,
+    partnerLeaveReason,
+    queueCount,
+    onlineCount,
+    setOnlineCount,
     startMatching,
     sendMessage,
     skip,

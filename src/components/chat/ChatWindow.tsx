@@ -9,6 +9,7 @@ import type { ChatMessage, PartnerInfo } from "@/hooks/useChatSocket";
 interface ChatWindowProps {
   partner: PartnerInfo | null;
   messages: ChatMessage[];
+  partnerLeaveReason?: "skip" | "leave" | "disconnect" | null;
   onSendMessage: (text: string) => void;
   onSkip: () => void;
   onLeave: () => void;
@@ -19,6 +20,7 @@ interface ChatWindowProps {
 export function ChatWindow({
   partner,
   messages,
+  partnerLeaveReason,
   onSendMessage,
   onSkip,
   onLeave,
@@ -38,10 +40,12 @@ export function ChatWindow({
 
   const handleSend = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!inputText.trim()) return;
+    if (!inputText.trim() || partnerLeaveReason) return;
     onSendMessage(inputText);
     setInputText("");
   };
+
+  const isPartnerLeft = Boolean(partnerLeaveReason);
 
   return (
     <div className="flex flex-col h-[560px] max-h-[80vh] w-full rounded-2xl glass-panel border border-white/10 overflow-hidden shadow-2xl">
@@ -62,11 +66,49 @@ export function ChatWindow({
           </div>
         </div>
 
-        <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-medium">
-          <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-          <span>Live 1-to-1</span>
-        </div>
+        {isPartnerLeft ? (
+          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-400 text-xs font-medium">
+            <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+            <span>Disconnected</span>
+          </div>
+        ) : (
+          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-medium">
+            <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+            <span>Live 1-to-1</span>
+          </div>
+        )}
       </div>
+
+      {/* Partner Left Action Alert */}
+      {isPartnerLeft && (
+        <div className="px-4 py-2.5 bg-amber-500/15 border-b border-amber-500/30 flex flex-col sm:flex-row items-center justify-between gap-2 animate-fade-in">
+          <div className="flex items-center gap-2 text-xs text-amber-200">
+            <span className="font-semibold">
+              {partnerLeaveReason === "leave"
+                ? "👋 Partner left the conversation"
+                : partnerLeaveReason === "disconnect"
+                ? "⚠️ Partner disconnected"
+                : "⚡ Partner skipped to the next chat"}
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={onSkip}
+              className="px-3 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold shadow-md transition-colors"
+            >
+              Find Next Partner
+            </button>
+            <button
+              type="button"
+              onClick={onLeave}
+              className="px-3 py-1 rounded-lg bg-white/10 hover:bg-white/15 text-gray-300 text-xs font-medium transition-colors"
+            >
+              Exit
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Messages Stream */}
       <div className="flex-1 p-4 overflow-y-auto space-y-2">
@@ -90,14 +132,19 @@ export function ChatWindow({
         <input
           type="text"
           value={inputText}
+          disabled={isPartnerLeft}
           onChange={(e) => setInputText(e.target.value)}
-          placeholder="Type a message (max 500 characters)..."
+          placeholder={
+            isPartnerLeft
+              ? "Partner has left. Click 'Find Next Partner' to match again."
+              : "Type a message (max 500 characters)..."
+          }
           maxLength={500}
-          className="flex-1 px-4 py-2.5 rounded-xl bg-black/40 border border-white/10 focus:border-indigo-500 focus:outline-none text-sm text-white placeholder-gray-500 transition-colors"
+          className="flex-1 px-4 py-2.5 rounded-xl bg-black/40 border border-white/10 focus:border-indigo-500 focus:outline-none text-sm text-white placeholder-gray-500 transition-colors disabled:opacity-50"
         />
         <button
           type="submit"
-          disabled={!inputText.trim()}
+          disabled={!inputText.trim() || isPartnerLeft}
           className="p-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:hover:bg-indigo-600 text-white transition-colors"
         >
           <Send className="w-4 h-4" />

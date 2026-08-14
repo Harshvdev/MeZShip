@@ -58,6 +58,10 @@ export default function Home() {
     messages,
     partner,
     statusMessage,
+    partnerLeaveReason,
+    queueCount,
+    onlineCount,
+    setOnlineCount,
     startMatching,
     sendMessage,
     skip,
@@ -65,6 +69,40 @@ export default function Home() {
     blockPartner,
     reportPartner,
   } = useChatSocket(profile?.user_id, profile?.display_name, token, lat, lng);
+
+  // Poll live stats & send presence heartbeat
+  useEffect(() => {
+    async function fetchStats() {
+      try {
+        const res = await fetch("/api/stats");
+        if (res.ok) {
+          const data = (await res.json()) as { onlineCount?: number; queueCount?: number };
+          if (typeof data.onlineCount === "number" && setOnlineCount) {
+            setOnlineCount(data.onlineCount);
+          }
+        }
+      } catch {}
+    }
+
+    async function sendHeartbeat() {
+      if (!token) return;
+      try {
+        await fetch("/api/presence", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${token}` },
+        });
+      } catch {}
+    }
+
+    fetchStats();
+    sendHeartbeat();
+    const interval = setInterval(() => {
+      fetchStats();
+      sendHeartbeat();
+    }, 12000);
+
+    return () => clearInterval(interval);
+  }, [token, setOnlineCount]);
 
   // 1. Fetch available campuses based on user location
   useEffect(() => {
@@ -169,6 +207,7 @@ export default function Home() {
     <div className="flex-1 flex flex-col">
       <Navbar
         profile={profile}
+        onlineCount={onlineCount}
         onOpenSettings={() => setShowSettings(true)}
         onSignOut={signOut}
       />
@@ -247,6 +286,7 @@ export default function Home() {
             <ChatWindow
               partner={partner}
               messages={messages}
+              partnerLeaveReason={partnerLeaveReason}
               onSendMessage={sendMessage}
               onSkip={skip}
               onLeave={leave}
@@ -260,16 +300,28 @@ export default function Home() {
             onCancel={leave}
             statusMessage={statusMessage}
             selectedCampusesCount={selectedCampusIds.length}
+            queueCount={queueCount}
+            onlineCount={onlineCount}
           />
         ) : chatState === "PARTNER_SKIPPED" ? (
-          /* PARTNER SKIPPED STATE */
+          /* PARTNER SKIPPED / LEFT STATE */
           <div className="p-8 rounded-3xl glass-panel border border-white/10 text-center max-w-md mx-auto animate-fade-in">
             <div className="w-12 h-12 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 flex items-center justify-center mx-auto mb-4">
               <RotateCcw className="w-6 h-6" />
             </div>
-            <h3 className="text-lg font-semibold text-white mb-2">Partner Left</h3>
+            <h3 className="text-lg font-semibold text-white mb-2">
+              {partnerLeaveReason === "leave"
+                ? "Partner Left the Chat"
+                : partnerLeaveReason === "disconnect"
+                ? "Partner Disconnected"
+                : "Partner Skipped"}
+            </h3>
             <p className="text-xs text-gray-400 mb-6">
-              Your chat partner skipped or disconnected from the session.
+              {partnerLeaveReason === "leave"
+                ? "Your chat partner left the conversation."
+                : partnerLeaveReason === "disconnect"
+                ? "Your chat partner lost connection or closed their session."
+                : "Your chat partner skipped to find a new person on campus."}
             </p>
             <div className="flex items-center justify-center gap-3">
               <button

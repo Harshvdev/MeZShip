@@ -6,13 +6,13 @@ export type WebSocketClientMessage =
   | { type: "leave" };
 
 export type WebSocketServerMessage =
-  | { type: "queue_joined"; message: string; queuedAt: number }
+  | { type: "queue_joined"; message: string; queuedAt: number; queueCount?: number; onlineCount?: number }
   | { type: "queue_left" }
   | { type: "match_found"; matchId: string; campusId: string; distanceMeters: number; partner: { userId: string; displayName: string } }
   | { type: "chat_ready"; matchId: string; userId: string }
   | { type: "partner_connected"; message: string }
   | { type: "message"; id: string; senderId: string; text: string; timestamp: number }
-  | { type: "partner_skipped"; message: string }
+  | { type: "partner_skipped"; message: string; reason?: "skip" | "leave" | "disconnect" }
   | { type: "error"; message: string };
 
 export enum ReportReason {
