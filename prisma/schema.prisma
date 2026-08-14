@@ -1,0 +1,114 @@
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["driverAdapters"]
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum CampusType {
+  COLLEGE
+  UNIVERSITY
+  CAMPUS
+}
+
+enum ReportReason {
+  HARASSMENT
+  SPAM
+  INAPPROPRIATE_BEHAVIOR
+  THREATENING_BEHAVIOR
+  IMPERSONATION
+  OTHER
+}
+
+enum BanType {
+  TEMPORARY_24H
+  TEMPORARY_7D
+  PERMANENT
+}
+
+model UserProfile {
+  user_id      String   @id
+  display_name String
+  created_at   DateTime @default(now())
+  updated_at   DateTime @updatedAt
+
+  preferences UserCampusPreference[]
+  bans        UserBan[]
+
+  reportsSubmitted Report[] @relation("ReporterUser")
+  reportsReceived  Report[] @relation("ReportedUser")
+
+  blocksInitiated UserBlock[] @relation("BlockerUser")
+  blocksReceived  UserBlock[] @relation("BlockedUser")
+
+  @@map("user_profiles")
+}
+
+model Campus {
+  id         String     @id @default(cuid())
+  name       String
+  type       CampusType @default(COLLEGE)
+  boundary   Json       // GeoJSON Polygon coordinates
+  active     Boolean    @default(true)
+  created_at DateTime   @default(now())
+
+  preferences UserCampusPreference[]
+
+  @@map("campuses")
+}
+
+model UserCampusPreference {
+  user_id    String
+  campus_id  String
+  created_at DateTime @default(now())
+
+  user   UserProfile @relation(fields: [user_id], references: [user_id], onDelete: Cascade)
+  campus Campus      @relation(fields: [campus_id], references: [id], onDelete: Cascade)
+
+  @@id([user_id, campus_id])
+  @@map("user_campus_preferences")
+}
+
+model UserBlock {
+  blocker_user_id String
+  blocked_user_id String
+  created_at      DateTime @default(now())
+
+  blocker UserProfile @relation("BlockerUser", fields: [blocker_user_id], references: [user_id], onDelete: Cascade)
+  blocked UserProfile @relation("BlockedUser", fields: [blocked_user_id], references: [user_id], onDelete: Cascade)
+
+  @@id([blocker_user_id, blocked_user_id])
+  @@map("user_blocks")
+}
+
+model Report {
+  id               String       @id @default(cuid())
+  reporter_user_id String
+  reported_user_id String
+  match_id         String       // Verified against ephemeral match context
+  reason           ReportReason
+  details          String?      // Optional details (max 300 chars)
+  created_at       DateTime     @default(now())
+
+  reporter UserProfile @relation("ReporterUser", fields: [reporter_user_id], references: [user_id], onDelete: Cascade)
+  reported UserProfile @relation("ReportedUser", fields: [reported_user_id], references: [user_id], onDelete: Cascade)
+
+  @@unique([reporter_user_id, reported_user_id])
+  @@map("reports")
+}
+
+model UserBan {
+  user_id    String    @id
+  ban_type   BanType
+  banned_at  DateTime  @default(now())
+  expires_at DateTime? // Null for permanent bans
+  reason     String
+
+  user UserProfile @relation(fields: [user_id], references: [user_id], onDelete: Cascade)
+
+  @@map("user_bans")
+}

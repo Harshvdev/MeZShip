@@ -1,0 +1,31 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "mezship-worker",
+  "main": "worker/index.ts",
+  "compatibility_date": "2024-12-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "CAMPUS_MATCHER",
+        "class_name": "CampusMatcherDO"
+      },
+      {
+        "name": "MATCH_ROOM",
+        "class_name": "MatchRoomDO"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_classes": ["CampusMatcherDO", "MatchRoomDO"]
+    }
+  ],
+  "vars": {
+    "NODE_ENV": "development",
+    "REPORT_THRESHOLD_24H": "6",
+    "REPORT_THRESHOLD_7D": "11",
+    "REPORT_THRESHOLD_PERMANENT": "20"
+  }
+}

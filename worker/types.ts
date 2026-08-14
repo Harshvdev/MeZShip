@@ -1,0 +1,35 @@
+export interface Env {
+  CAMPUS_MATCHER: DurableObjectNamespace;
+  MATCH_ROOM: DurableObjectNamespace;
+  DATABASE_URL?: string;
+  DIRECT_URL?: string;
+  SUPABASE_JWKS_URL?: string;
+  SUPABASE_URL?: string;
+  SUPABASE_SECRET_KEY?: string;
+  NEXT_PUBLIC_SUPABASE_URL?: string;
+  NEXT_PUBLIC_APP_URL?: string;
+  REPORT_THRESHOLD_24H?: string;
+  REPORT_THRESHOLD_7D?: string;
+  REPORT_THRESHOLD_PERMANENT?: string;
+  NODE_ENV?: string;
+}
+
+export interface AuthenticatedUser {
+  userId: string;
+  email?: string;
+}
+
+export interface WaitingUser {
+  userId: string;
+  displayName: string;
+  lat: number;
+  lng: number;
+  campusIds: string[];
+  maxRadiusMeters: number;
+  queuedAt: number;
+}
+
+export interface GeoJSONPolygon {
+  type: "Polygon" | "MultiPolygon";
+  coordinates: number[][][] | number[][][][];
+}
