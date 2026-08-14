@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Navbar } from "@/components/Navbar";
 import { RadarQueue } from "@/components/matching/RadarQueue";
 import { CampusSelector, type CampusOption } from "@/components/matching/CampusSelector";
@@ -8,6 +8,7 @@ import { ChatWindow } from "@/components/chat/ChatWindow";
 import { ReportModal } from "@/components/modals/ReportModal";
 import { BlockConfirmModal } from "@/components/modals/BlockConfirmModal";
 import { SettingsModal } from "@/components/modals/SettingsModal";
+import { LocationModal } from "@/components/modals/LocationModal";
 import { useAuth } from "@/hooks/useAuth";
 import { useGeolocation } from "@/hooks/useGeolocation";
 import { useChatSocket } from "@/hooks/useChatSocket";
@@ -16,18 +17,28 @@ import {
   Sparkles,
   MapPin,
   Shield,
-  MessageSquare,
   Users,
   Compass,
   ArrowRight,
   AlertTriangle,
   RotateCcw,
+  Sliders,
 } from "lucide-react";
 import Link from "next/link";
 
 export default function Home() {
-  const { user, profile, token, loading: authLoading, updateDisplayName, signOut } = useAuth();
-  const { lat, lng, error: geoError, retry: retryGeo } = useGeolocation();
+  const { user, profile, token, updateDisplayName, signOut } = useAuth();
+  const {
+    lat,
+    lng,
+    accuracy,
+    loading: geoLoading,
+    isCalibrated,
+    locationName,
+    retry: retryGeo,
+    setCalibratedLocation,
+    resetToAuto,
+  } = useGeolocation();
 
   const [campuses, setCampuses] = useState<CampusOption[]>([]);
   const [selectedCampusIds, setSelectedCampusIds] = useState<string[]>([]);
@@ -40,6 +51,7 @@ export default function Home() {
   const [showSettings, setShowSettings] = useState(false);
   const [showReport, setShowReport] = useState(false);
   const [showBlock, setShowBlock] = useState(false);
+  const [showLocationModal, setShowLocationModal] = useState(false);
 
   const {
     chatState,
@@ -149,6 +161,9 @@ export default function Home() {
     }
     startMatching(selectedCampusIds, matchingRadius);
   };
+
+  const insideCampus = useMemo(() => campuses.find((c) => c.isInside), [campuses]);
+  const nearestCampus = useMemo(() => (campuses.length > 0 ? campuses[0] : null), [campuses]);
 
   return (
     <div className="flex-1 flex flex-col">
@@ -289,12 +304,37 @@ export default function Home() {
                   </p>
                 </div>
 
-                <div className="flex items-center gap-2 self-start sm:self-auto px-3 py-1.5 rounded-xl bg-white/5 border border-white/10 text-xs text-gray-300">
-                  <MapPin className="w-3.5 h-3.5 text-emerald-400" />
-                  <span>
-                    {lat && lng ? "Coordinates Acquired" : "Detecting Location..."}
-                  </span>
-                </div>
+                {/* Interactive Location Badge */}
+                <button
+                  type="button"
+                  onClick={() => setShowLocationModal(true)}
+                  className="flex items-center gap-2.5 self-start sm:self-auto px-4 py-2.5 rounded-2xl bg-white/5 hover:bg-white/10 border border-white/10 hover:border-indigo-500/40 text-xs text-gray-200 transition-all group text-left shadow-sm"
+                >
+                  <MapPin
+                    className={`w-4 h-4 shrink-0 ${
+                      isCalibrated
+                        ? "text-amber-400"
+                        : insideCampus
+                        ? "text-emerald-400"
+                        : "text-indigo-400"
+                    }`}
+                  />
+                  <div>
+                    <div className="font-semibold text-white truncate max-w-[200px] leading-tight">
+                      {insideCampus
+                        ? insideCampus.name.split("(")[0].trim()
+                        : nearestCampus?.distanceMeters !== undefined
+                        ? `Near ${nearestCampus.name.split("(")[0].trim()}`
+                        : lat && lng
+                        ? "Coordinates Acquired"
+                        : "Detecting Location..."}
+                    </div>
+                    <div className="text-[10px] text-indigo-300 font-medium group-hover:underline flex items-center gap-1 mt-0.5">
+                      <span>{isCalibrated ? "Calibrated (Change)" : "Calibrate / Refine"}</span>
+                      <Sliders className="w-2.5 h-2.5" />
+                    </div>
+                  </div>
+                </button>
               </div>
             </div>
 
@@ -305,6 +345,9 @@ export default function Home() {
                 selectedIds={selectedCampusIds}
                 onChange={handleUpdateCampuses}
                 loading={campusesLoading}
+                onCalibrateLocation={(calLat, calLng, label) =>
+                  setCalibratedLocation(calLat, calLng, label)
+                }
               />
 
               {/* Matching Radius Option */}
@@ -318,7 +361,7 @@ export default function Home() {
                 <input
                   type="range"
                   min={500}
-                  max={3000}
+                  max={5000}
                   step={250}
                   value={matchingRadius}
                   onChange={(e) => setMatchingRadius(Number(e.target.value))}
@@ -340,6 +383,21 @@ export default function Home() {
       </main>
 
       {/* Modals */}
+      <LocationModal
+        isOpen={showLocationModal}
+        onClose={() => setShowLocationModal(false)}
+        lat={lat}
+        lng={lng}
+        accuracy={accuracy}
+        isCalibrated={isCalibrated}
+        locationName={locationName}
+        loading={geoLoading}
+        onRetry={retryGeo}
+        onSetLocation={(newLat, newLng, label) => setCalibratedLocation(newLat, newLng, label)}
+        onResetAuto={resetToAuto}
+        campuses={campuses}
+      />
+
       <SettingsModal
         isOpen={showSettings}
         onClose={() => setShowSettings(false)}

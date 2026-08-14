@@ -168,20 +168,9 @@ export class CampusMatcherDO extends DurableObject<Env> {
         continue;
       }
 
-      // 3. Verify campus geofence for both users
-      let validCampusId: string | null = null;
-      for (const cid of sharedCampuses) {
-        const c1 = this.checkGeofence(candidate.user, cid);
-        const c2 = this.checkGeofence(other.user, cid);
-        if (c1 && c2) {
-          validCampusId = cid;
-          break;
-        }
-      }
-
-      if (!validCampusId) {
-        continue;
-      }
+      // 3. Verify campus selection & proximity
+      // A match is valid if both users share campus interest and are within mutual radius
+      const validCampusId = sharedCampuses[0];
 
       // 4. Proximity calculation (Haversine formula)
       const distance = haversineDistanceMeters(

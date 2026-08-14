@@ -10,7 +10,7 @@ VALUES
     'gitm_lucknow',
     'Goel Institute of Technology & Management (GITM), Lucknow',
     'COLLEGE',
-    '{"type": "Polygon", "coordinates": [[[81.064, 26.884], [81.080, 26.884], [81.080, 26.898], [81.064, 26.898], [81.064, 26.884]]]}'::jsonb,
+    '{"type": "Polygon", "coordinates": [[[81.060, 26.885], [81.082, 26.885], [81.082, 26.898], [81.060, 26.898], [81.060, 26.885]]]}'::jsonb,
     true,
     NOW()
   ),
@@ -18,7 +18,7 @@ VALUES
     'bbdu_lucknow',
     'Babu Banarasi Das University (BBDU), Lucknow',
     'UNIVERSITY',
-    '{"type": "Polygon", "coordinates": [[[81.048, 26.880], [81.063, 26.880], [81.063, 26.896], [81.048, 26.896], [81.048, 26.880]]]}'::jsonb,
+    '{"type": "Polygon", "coordinates": [[[81.045, 26.880], [81.063, 26.880], [81.063, 26.896], [81.045, 26.896], [81.045, 26.880]]]}'::jsonb,
     true,
     NOW()
   ),
@@ -90,7 +90,7 @@ VALUES
     'gsvm_kanpur',
     'GSVM Medical College & Kanpur City Campus',
     'COLLEGE',
-    '{"type": "Polygon", "coordinates": [[[80.300, 26.440], [80.365, 26.440], [80.365, 26.490], [80.300, 26.490], [80.300, 26.440]]]}'::jsonb,
+    '{"type": "Polygon", "coordinates": [[[80.318, 26.475], [80.330, 26.475], [80.330, 26.486], [80.318, 26.486], [80.318, 26.475]]]}'::jsonb,
     true,
     NOW()
   ),

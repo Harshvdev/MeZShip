@@ -92,6 +92,64 @@ export default {
 
     if (url.pathname === "/api/campuses" && request.method === "GET") {
       const prisma = getPrisma(env);
+
+      // Auto-heal/sync accurate boundaries for campuses
+      try {
+        const accurateGSVM = {
+          type: "Polygon",
+          coordinates: [
+            [
+              [80.318, 26.475],
+              [80.330, 26.475],
+              [80.330, 26.486],
+              [80.318, 26.486],
+              [80.318, 26.475],
+            ],
+          ],
+        };
+        const accurateGITM = {
+          type: "Polygon",
+          coordinates: [
+            [
+              [81.060, 26.885],
+              [81.082, 26.885],
+              [81.082, 26.898],
+              [81.060, 26.898],
+              [81.060, 26.885],
+            ],
+          ],
+        };
+        const accurateBBDU = {
+          type: "Polygon",
+          coordinates: [
+            [
+              [81.045, 26.880],
+              [81.063, 26.880],
+              [81.063, 26.896],
+              [81.045, 26.896],
+              [81.045, 26.880],
+            ],
+          ],
+        };
+
+        await Promise.all([
+          prisma.campus.updateMany({
+            where: { id: "gsvm_kanpur" },
+            data: { boundary: accurateGSVM as any },
+          }),
+          prisma.campus.updateMany({
+            where: { id: "gitm_lucknow" },
+            data: { boundary: accurateGITM as any },
+          }),
+          prisma.campus.updateMany({
+            where: { id: "bbdu_lucknow" },
+            data: { boundary: accurateBBDU as any },
+          }),
+        ]);
+      } catch (syncErr) {
+        // Continue if background sync fails
+      }
+
       const campuses = await prisma.campus.findMany({
         where: { active: true },
         select: {
@@ -105,41 +163,62 @@ export default {
       const latStr = url.searchParams.get("lat");
       const lngStr = url.searchParams.get("lng");
       const radiusParam = url.searchParams.get("radius");
-      const maxRadiusMeters = radiusParam ? parseFloat(radiusParam) : 80000; // 80km radius discovery
+      const searchQuery = (url.searchParams.get("q") || "").trim().toLowerCase();
 
-      if (latStr && lngStr) {
-        const userLat = parseFloat(latStr);
-        const userLng = parseFloat(lngStr);
+      const userLat = latStr ? parseFloat(latStr) : null;
+      const userLng = lngStr ? parseFloat(lngStr) : null;
+      const hasCoords = userLat !== null && userLng !== null && !isNaN(userLat) && !isNaN(userLng);
+      const maxRadiusMeters = radiusParam ? parseFloat(radiusParam) : Infinity;
 
-        if (!isNaN(userLat) && !isNaN(userLng)) {
-          const enrichedCampuses = campuses
-            .map((c) => {
-              const isInside = isCoordinateInsideCampus(userLng, userLat, c.boundary);
-              const center = getCampusCenter(c.boundary);
-              const distanceMeters = center
-                ? Math.round(haversineDistanceMeters(userLat, userLng, center.lat, center.lng))
-                : 0;
-              return {
-                id: c.id,
-                name: c.name,
-                type: c.type,
-                boundary: c.boundary,
-                distanceMeters,
-                isInside,
-              };
-            })
-            .filter((c) => c.isInside || c.distanceMeters <= maxRadiusMeters)
-            .sort((a, b) => {
-              if (a.isInside && !b.isInside) return -1;
-              if (!a.isInside && b.isInside) return 1;
-              return a.distanceMeters - b.distanceMeters;
-            });
+      let enrichedCampuses = campuses.map((c) => {
+        const center = getCampusCenter(c.boundary);
+        const isInside = hasCoords
+          ? isCoordinateInsideCampus(userLng!, userLat!, c.boundary)
+          : false;
+        const distanceMeters =
+          hasCoords && center
+            ? Math.round(haversineDistanceMeters(userLat!, userLng!, center.lat, center.lng))
+            : undefined;
 
-          return jsonResponse({ campuses: enrichedCampuses });
-        }
+        return {
+          id: c.id,
+          name: c.name,
+          type: c.type,
+          boundary: c.boundary,
+          center,
+          distanceMeters,
+          isInside,
+        };
+      });
+
+      // Apply search filter if query string is present
+      if (searchQuery) {
+        enrichedCampuses = enrichedCampuses.filter(
+          (c) =>
+            c.name.toLowerCase().includes(searchQuery) ||
+            c.id.toLowerCase().includes(searchQuery) ||
+            c.type.toLowerCase().includes(searchQuery)
+        );
       }
 
-      return jsonResponse({ campuses });
+      // Apply radius filter only if radiusParam was explicitly specified
+      if (radiusParam && hasCoords) {
+        enrichedCampuses = enrichedCampuses.filter(
+          (c) => c.isInside || (c.distanceMeters !== undefined && c.distanceMeters <= maxRadiusMeters)
+        );
+      }
+
+      // Sort: inside campus first, then nearest to farthest, then alphabetical
+      enrichedCampuses.sort((a, b) => {
+        if (a.isInside && !b.isInside) return -1;
+        if (!a.isInside && b.isInside) return 1;
+        if (a.distanceMeters !== undefined && b.distanceMeters !== undefined) {
+          return a.distanceMeters - b.distanceMeters;
+        }
+        return a.name.localeCompare(b.name);
+      });
+
+      return jsonResponse({ campuses: enrichedCampuses });
     }
 
     // --------------------------------------------------------------------------
