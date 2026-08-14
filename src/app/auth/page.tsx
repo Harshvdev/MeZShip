@@ -3,8 +3,9 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { Sparkles, Mail, Shield, ArrowRight, Loader2 } from "lucide-react";
+import { Mail, Shield, ArrowRight, Loader2 } from "lucide-react";
 import Link from "next/link";
+import Image from "next/image";
 
 export default function AuthPage() {
   const [email, setEmail] = useState("");
@@ -66,8 +67,15 @@ export default function AuthPage() {
       <div className="w-full max-w-md p-8 rounded-3xl glass-panel border border-white/10 shadow-2xl animate-fade-in relative">
         <div className="flex flex-col items-center text-center mb-8">
           <Link href="/" className="inline-flex items-center gap-2 mb-4 group">
-            <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-indigo-500 to-purple-600 flex items-center justify-center shadow-lg shadow-indigo-500/25 group-hover:scale-105 transition-transform">
-              <Sparkles className="w-5 h-5 text-white" />
+            <div className="relative w-12 h-12 rounded-2xl overflow-hidden shadow-lg shadow-indigo-500/25 group-hover:scale-105 transition-transform">
+              <Image
+                src="/logo.png"
+                alt="MeZShip Logo"
+                fill
+                sizes="48px"
+                priority
+                className="object-contain"
+              />
             </div>
           </Link>
           <h2 className="text-2xl font-bold text-white tracking-tight">

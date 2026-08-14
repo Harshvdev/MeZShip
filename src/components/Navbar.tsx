@@ -2,7 +2,8 @@
 
 import { useState, useRef, useEffect } from "react";
 import Link from "next/link";
-import { Sparkles, Settings, LogOut, Clock, ChevronDown, User } from "lucide-react";
+import Image from "next/image";
+import { Settings, LogOut, Clock, ChevronDown, User } from "lucide-react";
 import type { UserProfile } from "@/hooks/useAuth";
 
 interface NavbarProps {
@@ -41,8 +42,15 @@ export function Navbar({
       <div className="max-w-6xl mx-auto px-4 h-14 sm:h-16 flex items-center justify-between">
         {/* Brand */}
         <Link href="/" className="flex items-center gap-2.5 group shrink-0">
-          <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-gradient-to-tr from-indigo-500 to-purple-600 flex items-center justify-center shadow-lg shadow-indigo-500/20 group-hover:scale-105 transition-transform shrink-0">
-            <Sparkles className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
+          <div className="relative w-8 h-8 sm:w-9 sm:h-9 rounded-xl overflow-hidden shadow-lg shadow-indigo-500/20 group-hover:scale-105 transition-transform shrink-0">
+            <Image
+              src="/logo.png"
+              alt="MeZShip Logo"
+              fill
+              sizes="(max-width: 640px) 32px, 36px"
+              priority
+              className="object-contain"
+            />
           </div>
           <span className="text-lg sm:text-xl font-bold tracking-tight bg-gradient-to-r from-white via-indigo-200 to-indigo-400 bg-clip-text text-transparent">
             MeZShip
