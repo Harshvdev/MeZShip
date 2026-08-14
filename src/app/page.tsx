@@ -1,10 +1,9 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { Navbar } from "@/components/Navbar";
-import { RadarQueue } from "@/components/matching/RadarQueue";
+import { MessageBubble } from "@/components/chat/MessageBubble";
 import { CampusSelector, type CampusOption } from "@/components/matching/CampusSelector";
-import { ChatWindow } from "@/components/chat/ChatWindow";
 import { ReportModal } from "@/components/modals/ReportModal";
 import { BlockConfirmModal } from "@/components/modals/BlockConfirmModal";
 import { SettingsModal } from "@/components/modals/SettingsModal";
@@ -15,19 +14,23 @@ import { useGeolocation } from "@/hooks/useGeolocation";
 import { useChatSocket } from "@/hooks/useChatSocket";
 import type { ReportReason } from "@/lib/protocol";
 import {
-  Sparkles,
+  Send,
   MapPin,
-  Shield,
-  Users,
-  Compass,
-  ArrowRight,
+  Sparkles,
+  Radio,
+  X,
   AlertTriangle,
   RotateCcw,
   Sliders,
+  ShieldAlert,
+  UserX,
+  LogOut,
+  MoreVertical,
 } from "lucide-react";
-import Link from "next/link";
+import { useRouter } from "next/navigation";
 
 export default function Home() {
+  const router = useRouter();
   const { user, profile, token, updateDisplayName, signOut } = useAuth();
   const {
     lat,
@@ -44,9 +47,15 @@ export default function Home() {
   const [campuses, setCampuses] = useState<CampusOption[]>([]);
   const [selectedCampusIds, setSelectedCampusIds] = useState<string[]>([]);
   const [campusesLoading, setCampusesLoading] = useState<boolean>(true);
-  const [matchingRadius, setMatchingRadius] = useState<number>(2000);
+  const [matchingRadius, setMatchingRadius] = useState<number>(5000);
   const [isBanned, setIsBanned] = useState(false);
   const [banReason, setBanReason] = useState<string | null>(null);
+
+  // Chat input
+  const [inputText, setInputText] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const [showPartnerMenu, setShowPartnerMenu] = useState(false);
 
   // Modals
   const [showSettings, setShowSettings] = useState(false);
@@ -77,6 +86,21 @@ export default function Home() {
     reportPartner,
     reportPastMatch,
   } = useChatSocket(profile?.user_id, profile?.display_name, token, lat, lng);
+
+  // Auto-scroll chat messages
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
+
+  // Focus input when match starts
+  useEffect(() => {
+    if (chatState === "MATCHED") {
+      setShowPartnerMenu(false);
+      setTimeout(() => {
+        inputRef.current?.focus();
+      }, 100);
+    }
+  }, [chatState]);
 
   // Poll live stats & send presence heartbeat
   useEffect(() => {
@@ -112,7 +136,7 @@ export default function Home() {
     return () => clearInterval(interval);
   }, [token, setOnlineCount]);
 
-  // 1. Fetch available campuses based on user location
+  // Fetch available campuses based on user location
   useEffect(() => {
     async function loadCampuses() {
       setCampusesLoading(true);
@@ -123,16 +147,6 @@ export default function Home() {
           const data = (await res.json()) as { campuses?: CampusOption[] };
           if (data.campuses) {
             setCampuses(data.campuses);
-            if (data.campuses.length > 0) {
-              setSelectedCampusIds((prev) => {
-                if (prev.length === 0) {
-                  // Pre-select inside campus or first 2 closest
-                  const inside = data.campuses!.filter((c) => c.isInside).map((c) => c.id);
-                  return inside.length > 0 ? inside : data.campuses!.slice(0, 2).map((c) => c.id);
-                }
-                return prev;
-              });
-            }
           }
         } else {
           setCampuses([]);
@@ -147,7 +161,7 @@ export default function Home() {
     loadCampuses();
   }, [lat, lng]);
 
-  // 2. Fetch User Campus Preferences & Check Ban State
+  // Fetch User Preferences & Check Ban State
   useEffect(() => {
     if (!token) return;
 
@@ -200,19 +214,54 @@ export default function Home() {
     }
   };
 
-  const handleStartChat = () => {
-    if (selectedCampusIds.length === 0) {
-      alert("Please select at least one campus.");
+  const handleStartChat = useCallback(() => {
+    if (!user) {
+      router.push("/auth");
       return;
     }
+    // Default 5 km radius proximity match
     startMatching(selectedCampusIds, matchingRadius);
+  }, [user, router, startMatching, selectedCampusIds, matchingRadius]);
+
+  const handleSend = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!inputText.trim() || partnerLeaveReason || chatState !== "MATCHED") return;
+    sendMessage(inputText);
+    setInputText("");
   };
+
+  // Keyboard Shortcuts (Esc to Start / Skip / Cancel, Enter to Start when idle)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const activeTag = (document.activeElement?.tagName || "").toLowerCase();
+      const isInputFocused = activeTag === "input" || activeTag === "textarea";
+
+      if (e.key === "Escape") {
+        e.preventDefault();
+        if (chatState === "MATCHED") {
+          skip();
+        } else if (chatState === "SEARCHING") {
+          leave();
+        } else if (chatState === "IDLE" || chatState === "PARTNER_SKIPPED") {
+          handleStartChat();
+        }
+      } else if (e.key === "Enter" && !isInputFocused) {
+        if (chatState === "IDLE" || chatState === "PARTNER_SKIPPED") {
+          e.preventDefault();
+          handleStartChat();
+        }
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [chatState, skip, leave, handleStartChat]);
 
   const insideCampus = useMemo(() => campuses.find((c) => c.isInside), [campuses]);
   const nearestCampus = useMemo(() => (campuses.length > 0 ? campuses[0] : null), [campuses]);
 
   return (
-    <div className="flex-1 flex flex-col">
+    <div className="flex-1 flex flex-col min-h-screen">
       <Navbar
         profile={profile}
         onlineCount={onlineCount}
@@ -221,16 +270,14 @@ export default function Home() {
         onSignOut={signOut}
       />
 
-      <main className="flex-1 max-w-4xl w-full mx-auto p-4 sm:p-6 flex flex-col justify-center">
+      <main className="flex-1 max-w-3xl w-full mx-auto p-3 sm:p-6 flex flex-col justify-center">
         {/* BAN SCREEN STATE */}
         {isBanned ? (
-          <div className="p-8 rounded-3xl glass-panel border border-rose-500/30 text-center max-w-lg mx-auto animate-fade-in">
+          <div className="p-8 rounded-3xl glass-panel border border-rose-500/30 text-center max-w-md mx-auto animate-fade-in shadow-2xl">
             <div className="w-12 h-12 rounded-2xl bg-rose-500/10 border border-rose-500/20 text-rose-400 flex items-center justify-center mx-auto mb-4">
               <AlertTriangle className="w-6 h-6" />
             </div>
-            <h2 className="text-xl font-bold text-white mb-2">
-              Account Suspended
-            </h2>
+            <h2 className="text-xl font-bold text-white mb-2">Account Suspended</h2>
             <p className="text-sm text-gray-400 mb-4">
               {banReason || "Your account has accumulated reports exceeding safety limits."}
             </p>
@@ -238,206 +285,362 @@ export default function Home() {
               Bans are automated based on distinct community reports.
             </p>
           </div>
-        ) : !user ? (
-          /* PUBLIC LANDING VIEW */
-          <div className="flex flex-col items-center text-center py-12 px-4 animate-fade-in">
-            <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 text-xs font-medium mb-6">
-              <Sparkles className="w-3.5 h-3.5" />
-              <span>Campus Proximity Random Chat</span>
-            </div>
-
-            <h1 className="text-4xl sm:text-5xl font-extrabold tracking-tight text-white max-w-2xl leading-tight">
-              Spontaneous conversations with people on your campus.
-            </h1>
-
-            <p className="text-base text-gray-400 max-w-lg mt-4 mb-8">
-              MeZShip pairs you for 1-to-1 chats strictly within eligible campus geofences. Pseudonymous names, zero chat retention, and automatic community safeguards.
-            </p>
-
-            <Link
-              href="/auth"
-              className="flex items-center gap-2.5 px-6 py-3.5 rounded-2xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-semibold shadow-xl shadow-indigo-600/30 transition-all hover:scale-[1.02]"
-            >
-              <span>Get Started & Chat</span>
-              <ArrowRight className="w-4 h-4" />
-            </Link>
-
-            {/* Feature Highlights Grid */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-16 max-w-3xl w-full text-left">
-              <div className="p-5 rounded-2xl glass-panel border border-white/10">
-                <Compass className="w-6 h-6 text-indigo-400 mb-3" />
-                <h3 className="text-sm font-semibold text-white mb-1">Campus Geofenced</h3>
-                <p className="text-xs text-gray-400">
-                  Matching is restricted to users currently verified within configured campus boundaries.
-                </p>
-              </div>
-
-              <div className="p-5 rounded-2xl glass-panel border border-white/10">
-                <Users className="w-6 h-6 text-purple-400 mb-3" />
-                <h3 className="text-sm font-semibold text-white mb-1">Pseudonymous Identity</h3>
-                <p className="text-xs text-gray-400">
-                  No public profiles or follower graphs. Enjoy randomized display names you can edit anytime.
-                </p>
-              </div>
-
-              <div className="p-5 rounded-2xl glass-panel border border-white/10">
-                <Shield className="w-6 h-6 text-emerald-400 mb-3" />
-                <h3 className="text-sm font-semibold text-white mb-1">Zero Chat Retention</h3>
-                <p className="text-xs text-gray-400">
-                  Messages exist purely in memory during active matches and are never written to any database.
-                </p>
-              </div>
-            </div>
-          </div>
-        ) : chatState === "MATCHED" ? (
-          /* ACTIVE 1-TO-1 CHAT */
-          <div className="w-full flex justify-center animate-fade-in">
-            <ChatWindow
-              partner={partner}
-              messages={messages}
-              partnerLeaveReason={partnerLeaveReason}
-              onSendMessage={sendMessage}
-              onSkip={skip}
-              onLeave={leave}
-              onOpenReport={() => setShowReport(true)}
-              onOpenBlock={() => setShowBlock(true)}
-            />
-          </div>
-        ) : chatState === "SEARCHING" ? (
-          /* RADAR SEARCHING STATE */
-          <RadarQueue
-            onCancel={leave}
-            statusMessage={statusMessage}
-            selectedCampusesCount={selectedCampusIds.length}
-            queueCount={queueCount}
-            onlineCount={onlineCount}
-          />
-        ) : chatState === "PARTNER_SKIPPED" ? (
-          /* PARTNER SKIPPED / LEFT STATE */
-          <div className="p-8 rounded-3xl glass-panel border border-white/10 text-center max-w-md mx-auto animate-fade-in">
-            <div className="w-12 h-12 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 flex items-center justify-center mx-auto mb-4">
-              <RotateCcw className="w-6 h-6" />
-            </div>
-            <h3 className="text-lg font-semibold text-white mb-2">
-              {partnerLeaveReason === "leave"
-                ? "Partner Left the Chat"
-                : partnerLeaveReason === "disconnect"
-                ? "Partner Disconnected"
-                : "Partner Skipped"}
-            </h3>
-            <p className="text-xs text-gray-400 mb-6">
-              {partnerLeaveReason === "leave"
-                ? "Your chat partner left the conversation."
-                : partnerLeaveReason === "disconnect"
-                ? "Your chat partner lost connection or closed their session."
-                : "Your chat partner skipped to find a new person on campus."}
-            </p>
-            <div className="flex items-center justify-center gap-3">
-              <button
-                onClick={leave}
-                className="px-4 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-gray-300 text-xs font-medium transition-colors"
-              >
-                Exit to Home
-              </button>
-              <button
-                onClick={handleStartChat}
-                className="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold shadow-lg shadow-indigo-600/30 transition-colors"
-              >
-                Find Next Partner
-              </button>
-            </div>
-          </div>
         ) : (
-          /* IDLE HOME LOBBY */
-          <div className="w-full max-w-2xl mx-auto space-y-6 animate-fade-in">
-            {/* Greeting & Location Notice */}
-            <div className="p-6 rounded-3xl glass-panel border border-white/10 relative overflow-hidden">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                <div>
-                  <div className="text-xs text-indigo-400 font-medium uppercase tracking-wider mb-1">
-                    Ready to Connect
+          /* OPENTALK STYLE CHAT CONTAINER */
+          <div className="w-full rounded-3xl glass-panel border border-white/10 overflow-hidden shadow-2xl flex flex-col h-[580px] max-h-[84vh] relative transition-all duration-300">
+            {/* Top Scope & Info Header */}
+            <div className="px-5 py-3.5 border-b border-white/10 bg-white/[0.03] flex items-center justify-between">
+              {chatState === "MATCHED" && partner ? (
+                /* Partner Header when Matched */
+                <>
+                  <div className="flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-full bg-gradient-to-tr from-teal-500 to-indigo-600 flex items-center justify-center font-bold text-white text-xs shadow-md">
+                      {partner.displayName?.slice(0, 2).toUpperCase() || "??"}
+                    </div>
+                    <div>
+                      <div className="text-sm font-semibold text-white leading-tight">
+                        {partner.displayName || "Connected Partner"}
+                      </div>
+                      <div className="flex items-center gap-1.5 text-xs text-teal-400">
+                        <MapPin className="w-3 h-3" />
+                        <span>~{partner.distanceMeters ?? 150}m away</span>
+                      </div>
+                    </div>
                   </div>
-                  <h2 className="text-xl font-bold text-white">
-                    Welcome, {profile?.display_name || "Campus Explorer"}!
-                  </h2>
-                  <p className="text-xs text-gray-400 mt-1">
-                    Select the campuses where you want to find people nearby.
-                  </p>
-                </div>
 
-                {/* Interactive Location Badge */}
+                  <div className="flex items-center gap-2">
+                    {partnerLeaveReason ? (
+                      <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-400 text-xs font-medium">
+                        <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+                        <span>Disconnected</span>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-medium">
+                        <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                        <span>Live 1-to-1</span>
+                      </div>
+                    )}
+
+                    {/* Safety Options Menu */}
+                    <div className="relative">
+                      <button
+                        onClick={() => setShowPartnerMenu(!showPartnerMenu)}
+                        className="p-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white border border-white/10 transition-colors"
+                        title="Partner options"
+                      >
+                        <MoreVertical className="w-4 h-4" />
+                      </button>
+
+                      {showPartnerMenu && (
+                        <>
+                          <div
+                            className="fixed inset-0 z-20"
+                            onClick={() => setShowPartnerMenu(false)}
+                          />
+                          <div className="absolute right-0 top-full mt-2 w-48 rounded-2xl glass-panel border border-white/15 shadow-2xl p-1.5 z-30 animate-fade-in">
+                            <button
+                              onClick={() => {
+                                setShowPartnerMenu(false);
+                                setShowReport(true);
+                              }}
+                              className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-left text-xs font-medium text-amber-300 hover:bg-amber-500/10 transition-colors"
+                            >
+                              <ShieldAlert className="w-4 h-4 text-amber-400" />
+                              <span>Report User...</span>
+                            </button>
+
+                            <button
+                              onClick={() => {
+                                setShowPartnerMenu(false);
+                                setShowBlock(true);
+                              }}
+                              className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-left text-xs font-medium text-rose-300 hover:bg-rose-500/10 transition-colors"
+                            >
+                              <UserX className="w-4 h-4 text-rose-400" />
+                              <span>Block User</span>
+                            </button>
+
+                            <div className="my-1 border-t border-white/10" />
+
+                            <button
+                              onClick={() => {
+                                setShowPartnerMenu(false);
+                                leave();
+                              }}
+                              className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-left text-xs font-medium text-gray-400 hover:text-white hover:bg-white/5 transition-colors"
+                            >
+                              <LogOut className="w-4 h-4" />
+                              <span>Leave Chat</span>
+                            </button>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                </>
+              ) : (
+                /* Default Header Pill */
+                <div className="flex items-center justify-between w-full">
+                  <button
+                    type="button"
+                    onClick={() => setShowLocationModal(true)}
+                    className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-teal-500/10 border border-teal-500/20 hover:border-teal-400/40 text-teal-300 text-xs font-medium transition-all group"
+                    title="Click to refine location calibration"
+                  >
+                    <MapPin className="w-3.5 h-3.5 text-teal-400 shrink-0" />
+                    <span>
+                      {insideCampus
+                        ? `${insideCampus.name.split("(")[0].trim()} · < 5 km`
+                        : locationName
+                        ? `${locationName} · < 5 km`
+                        : "Nearby · Under 5 km"}
+                    </span>
+                    <Sliders className="w-3 h-3 text-teal-400/60 group-hover:text-teal-300 ml-0.5" />
+                  </button>
+
+                  <div className="flex items-center gap-1.5 text-xs text-gray-500 font-medium">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                    <span>Auto-Match</span>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Middle Main Viewport */}
+            <div className="flex-1 overflow-y-auto p-4 sm:p-6 flex flex-col">
+              {chatState === "IDLE" ? (
+                /* IDLE STATE: Clean OpenTalk Card */
+                <div className="flex-1 flex flex-col justify-between animate-fade-in">
+                  <div>
+                    {/* Filter Pill Badge */}
+                    <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/5 border border-white/10 text-gray-300 text-xs font-medium w-fit mb-5">
+                      <span className="text-amber-400">⚡</span>
+                      <span>Nearby Matchmaking (under 5 km)</span>
+                      <span className="text-gray-500">🔒</span>
+                    </div>
+
+                    {/* Welcoming Message Bubble */}
+                    <div className="p-4 sm:p-5 rounded-2xl bg-white/5 border border-white/10 max-w-lg mb-6 shadow-lg">
+                      <p className="text-sm sm:text-base text-gray-200 leading-relaxed">
+                        Welcome back to <span className="font-bold text-white">MeZShip</span> 🎉 —{" "}
+                        <span className="font-bold text-emerald-400">{onlineCount}</span>{" "}
+                        {onlineCount === 1 ? "person" : "people"} online right now. Ready to meet someone nearby?
+                      </p>
+                    </div>
+
+                    {/* Start Chatting Button */}
+                    <div>
+                      <button
+                        onClick={handleStartChat}
+                        className="flex items-center gap-3 px-6 py-3.5 rounded-2xl bg-gradient-to-r from-teal-500 via-indigo-600 to-purple-600 hover:from-teal-400 hover:to-purple-500 text-white font-semibold text-sm shadow-xl shadow-teal-500/20 transition-all hover:scale-[1.02] active:scale-[0.99] group"
+                      >
+                        <span className="text-amber-300 text-base group-hover:translate-x-0.5 transition-transform">
+                          ▶
+                        </span>
+                        <span>Start chatting</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Highlights Footer */}
+                  <div className="pt-6 border-t border-white/5 flex flex-wrap items-center gap-4 sm:gap-6 text-xs text-gray-400">
+                    <div className="flex items-center gap-1.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                      <span>Automatic 5 km radius</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-teal-400" />
+                      <span>Pseudonymous identity</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-indigo-400" />
+                      <span>Zero chat retention</span>
+                    </div>
+                  </div>
+                </div>
+              ) : chatState === "SEARCHING" ? (
+                /* SEARCHING STATE: Radar Scanning Indicator */
+                <div className="flex-1 flex flex-col items-center justify-center text-center p-6 animate-fade-in">
+                  <div className="relative flex items-center justify-center w-48 h-48 my-4">
+                    <div className="absolute inset-0 rounded-full border border-teal-500/20 animate-radar-pulse" />
+                    <div
+                      className="absolute inset-0 rounded-full border border-indigo-500/30 animate-radar-pulse"
+                      style={{ animationDelay: "1s" }}
+                    />
+                    <div
+                      className="absolute inset-0 rounded-full border border-purple-500/30 animate-radar-pulse"
+                      style={{ animationDelay: "2s" }}
+                    />
+
+                    {/* Center Node */}
+                    <div className="relative z-10 w-16 h-16 rounded-full bg-gradient-to-tr from-teal-500 to-indigo-600 flex items-center justify-center shadow-xl shadow-teal-500/30 border border-white/20">
+                      <Radio className="w-7 h-7 text-white animate-pulse" />
+                    </div>
+                  </div>
+
+                  <h3 className="text-base font-semibold text-white mb-1">
+                    Searching for someone nearby
+                  </h3>
+                  <p className="text-xs text-gray-400 max-w-sm mb-4">
+                    {statusMessage || "Scanning for online students within 5 km radius..."}
+                  </p>
+
+                  <div className="flex items-center gap-2 mb-6">
+                    <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-xs text-emerald-300 font-medium">
+                      <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                      <span>{onlineCount} online</span>
+                    </div>
+                    <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-teal-500/10 border border-teal-500/20 text-xs text-teal-300 font-medium">
+                      <MapPin className="w-3 h-3" />
+                      <span>Under 5 km</span>
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={leave}
+                    className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white border border-white/10 text-xs transition-colors"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                    <span>Cancel Search (Esc)</span>
+                  </button>
+                </div>
+              ) : chatState === "PARTNER_SKIPPED" ? (
+                /* PARTNER SKIPPED / LEFT STATE */
+                <div className="flex-1 flex flex-col items-center justify-center text-center p-6 animate-fade-in max-w-md mx-auto">
+                  <div className="w-12 h-12 rounded-2xl bg-teal-500/10 border border-teal-500/20 text-teal-400 flex items-center justify-center mb-4">
+                    <RotateCcw className="w-6 h-6" />
+                  </div>
+                  <h3 className="text-base font-semibold text-white mb-1">
+                    {partnerLeaveReason === "leave"
+                      ? "Partner Left the Chat"
+                      : partnerLeaveReason === "disconnect"
+                      ? "Partner Disconnected"
+                      : "Partner Skipped"}
+                  </h3>
+                  <p className="text-xs text-gray-400 mb-6">
+                    {partnerLeaveReason === "leave"
+                      ? "Your chat partner left the conversation."
+                      : partnerLeaveReason === "disconnect"
+                      ? "Partner disconnected. Reconnecting nearby..."
+                      : "Partner skipped. Searching for next person within 5 km..."}
+                  </p>
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={leave}
+                      className="px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-gray-300 text-xs font-medium transition-colors"
+                    >
+                      Exit to Home
+                    </button>
+                    <button
+                      onClick={handleStartChat}
+                      className="px-5 py-2 rounded-xl bg-teal-500 hover:bg-teal-400 text-gray-950 text-xs font-bold shadow-lg shadow-teal-500/25 transition-all"
+                    >
+                      Find Next Partner (Esc)
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                /* MATCHED ACTIVE MESSAGES STREAM */
+                <div className="flex-1 flex flex-col justify-between">
+                  {messages.length === 0 ? (
+                    <div className="h-full flex flex-col items-center justify-center text-center p-6 text-gray-500 text-xs my-auto">
+                      <Sparkles className="w-8 h-8 text-teal-400/50 mb-2 animate-pulse" />
+                      <p className="font-medium text-gray-300">You are connected!</p>
+                      <p className="text-gray-500 mt-0.5">
+                        Messages are live in memory and never written to disk.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {messages.map((msg) => (
+                        <MessageBubble key={msg.id} message={msg} />
+                      ))}
+                      <div ref={messagesEndRef} />
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Bottom Control Bar (OpenTalk Signature Bar) */}
+            <div className="px-4 py-3 bg-white/[0.04] border-t border-white/10 flex items-center gap-2.5">
+              {/* Dynamic Left Action Button */}
+              {chatState === "IDLE" ? (
                 <button
                   type="button"
-                  onClick={() => setShowLocationModal(true)}
-                  className="flex items-center gap-2.5 self-start sm:self-auto px-4 py-2.5 rounded-2xl bg-white/5 hover:bg-white/10 border border-white/10 hover:border-indigo-500/40 text-xs text-gray-200 transition-all group text-left shadow-sm"
+                  onClick={handleStartChat}
+                  className="flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl bg-teal-500 hover:bg-teal-400 text-gray-950 font-bold text-sm shadow-lg shadow-teal-500/20 transition-all hover:scale-[1.02] active:scale-[0.98] shrink-0"
                 >
-                  <MapPin
-                    className={`w-4 h-4 shrink-0 ${
-                      isCalibrated
-                        ? "text-amber-400"
-                        : insideCampus
-                        ? "text-emerald-400"
-                        : "text-indigo-400"
-                    }`}
-                  />
-                  <div>
-                    <div className="font-semibold text-white truncate max-w-[200px] leading-tight">
-                      {insideCampus
-                        ? insideCampus.name.split("(")[0].trim()
-                        : nearestCampus?.distanceMeters !== undefined
-                        ? `Near ${nearestCampus.name.split("(")[0].trim()}`
-                        : lat && lng
-                        ? "Coordinates Acquired"
-                        : "Detecting Location..."}
-                    </div>
-                    <div className="text-[10px] text-indigo-300 font-medium group-hover:underline flex items-center gap-1 mt-0.5">
-                      <span>{isCalibrated ? "Calibrated (Change)" : "Calibrate / Refine"}</span>
-                      <Sliders className="w-2.5 h-2.5" />
-                    </div>
-                  </div>
-                </button>
-              </div>
-            </div>
-
-            {/* Campus Selector */}
-            <div className="p-6 rounded-3xl glass-panel border border-white/10">
-              <CampusSelector
-                campuses={campuses}
-                selectedIds={selectedCampusIds}
-                onChange={handleUpdateCampuses}
-                loading={campusesLoading}
-                onCalibrateLocation={(calLat, calLng, label) =>
-                  setCalibratedLocation(calLat, calLng, label)
-                }
-              />
-
-              {/* Matching Radius Option */}
-              <div className="mt-6 pt-5 border-t border-white/10">
-                <div className="flex items-center justify-between text-xs mb-2">
-                  <span className="text-gray-300 font-medium">Matching Distance:</span>
-                  <span className="text-indigo-400 font-semibold">
-                    Up to {matchingRadius >= 1000 ? `${matchingRadius / 1000} km` : `${matchingRadius} m`}
+                  <span>Start</span>
+                  <span className="text-[10px] font-semibold bg-black/20 text-black px-1.5 py-0.5 rounded">
+                    Esc
                   </span>
-                </div>
-                <input
-                  type="range"
-                  min={500}
-                  max={5000}
-                  step={250}
-                  value={matchingRadius}
-                  onChange={(e) => setMatchingRadius(Number(e.target.value))}
-                  className="w-full accent-indigo-500 h-1.5 bg-white/10 rounded-lg cursor-pointer"
-                />
-              </div>
+                </button>
+              ) : chatState === "SEARCHING" ? (
+                <button
+                  type="button"
+                  onClick={leave}
+                  className="flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/30 font-semibold text-sm transition-all shrink-0"
+                >
+                  <span>Stop</span>
+                  <span className="text-[10px] font-semibold bg-rose-500/30 text-rose-200 px-1.5 py-0.5 rounded">
+                    Esc
+                  </span>
+                </button>
+              ) : chatState === "MATCHED" ? (
+                <button
+                  type="button"
+                  onClick={skip}
+                  className="flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-sm shadow-lg shadow-indigo-600/30 transition-all hover:scale-[1.02] active:scale-[0.98] shrink-0"
+                >
+                  <span>Skip</span>
+                  <span className="text-[10px] font-semibold bg-black/30 text-indigo-100 px-1.5 py-0.5 rounded">
+                    Esc
+                  </span>
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleStartChat}
+                  className="flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl bg-teal-500 hover:bg-teal-400 text-gray-950 font-bold text-sm shadow-lg shadow-teal-500/20 transition-all hover:scale-[1.02] active:scale-[0.98] shrink-0"
+                >
+                  <span>Next</span>
+                  <span className="text-[10px] font-semibold bg-black/20 text-black px-1.5 py-0.5 rounded">
+                    Esc
+                  </span>
+                </button>
+              )}
 
-              {/* Start Button */}
-              <button
-                onClick={handleStartChat}
-                className="w-full mt-6 flex items-center justify-center gap-2 py-3.5 px-6 rounded-2xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-semibold text-sm shadow-xl shadow-indigo-600/30 transition-all hover:scale-[1.01]"
-              >
-                <Compass className="w-4 h-4" />
-                <span>Start Finding People</span>
-              </button>
+              {/* Center Input Form */}
+              <form onSubmit={handleSend} className="flex-1 flex items-center gap-2">
+                <input
+                  ref={inputRef}
+                  type="text"
+                  value={inputText}
+                  disabled={chatState !== "MATCHED" || Boolean(partnerLeaveReason)}
+                  onChange={(e) => setInputText(e.target.value)}
+                  placeholder={
+                    chatState === "IDLE"
+                      ? "Press Start or 'Esc' to begin chatting..."
+                      : chatState === "SEARCHING"
+                      ? "Searching for nearby users within 5 km..."
+                      : partnerLeaveReason
+                      ? "Partner left. Press 'Next' or Esc to find a new match."
+                      : "Type a message (max 500 characters)..."
+                  }
+                  maxLength={500}
+                  className="w-full px-4 py-2.5 rounded-xl bg-black/40 border border-white/10 focus:border-teal-400 focus:outline-none text-sm text-white placeholder-gray-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                />
+                <button
+                  type="submit"
+                  disabled={
+                    chatState !== "MATCHED" || !inputText.trim() || Boolean(partnerLeaveReason)
+                  }
+                  className="p-2.5 rounded-xl bg-teal-500 hover:bg-teal-400 disabled:opacity-30 disabled:hover:bg-teal-500 text-gray-950 transition-all shrink-0 shadow-md"
+                >
+                  <Send className="w-4 h-4" />
+                </button>
+              </form>
             </div>
           </div>
         )}
@@ -511,3 +714,4 @@ export default function Home() {
     </div>
   );
 }
+

@@ -87,7 +87,7 @@ export class CampusMatcherDO extends DurableObject<Env> {
       const lat = parseFloat(url.searchParams.get("lat") || "0");
       const lng = parseFloat(url.searchParams.get("lng") || "0");
       const campusIds = (url.searchParams.get("campuses") || "").split(",").filter(Boolean);
-      const maxRadiusMeters = parseFloat(url.searchParams.get("radius") || "2000");
+      const maxRadiusMeters = parseFloat(url.searchParams.get("radius") || "5000");
 
       if (!userId) {
         return new Response("Missing userId", { status: 400 });
@@ -246,15 +246,26 @@ export class CampusMatcherDO extends DurableObject<Env> {
         continue;
       }
 
-      // 2. Find mutual eligible campuses
+      // 2. Check mutual campus or open proximity preferences
+      const candidateHasCampusFilter =
+        candidate.user.campusIds.length > 0 &&
+        !candidate.user.campusIds.includes("all") &&
+        !candidate.user.campusIds.includes("*");
+      const otherHasCampusFilter =
+        other.user.campusIds.length > 0 &&
+        !other.user.campusIds.includes("all") &&
+        !other.user.campusIds.includes("*");
+
       const sharedCampuses = candidate.user.campusIds.filter((cid) =>
         other.user.campusIds.includes(cid)
       );
-      if (sharedCampuses.length === 0) {
+
+      // If both users explicitly picked specific campuses and share none, skip
+      if (candidateHasCampusFilter && otherHasCampusFilter && sharedCampuses.length === 0) {
         continue;
       }
 
-      const validCampusId = sharedCampuses[0];
+      const validCampusId = sharedCampuses.length > 0 ? sharedCampuses[0] : "nearby";
 
       // 3. Proximity calculation (Haversine formula)
       const distance = haversineDistanceMeters(
@@ -265,11 +276,17 @@ export class CampusMatcherDO extends DurableObject<Env> {
       );
 
       const maxAllowedDistance = Math.min(
-        candidate.user.maxRadiusMeters,
-        other.user.maxRadiusMeters
+        candidate.user.maxRadiusMeters || 5000,
+        other.user.maxRadiusMeters || 5000
       );
 
-      if (distance > maxAllowedDistance) {
+      // Distance check: must be within max allowed distance (default 5 km)
+      // If either user doesn't have GPS coordinates (lat/lng = 0), allow connecting
+      const hasCoords =
+        (candidate.user.lat !== 0 || candidate.user.lng !== 0) &&
+        (other.user.lat !== 0 || other.user.lng !== 0);
+
+      if (hasCoords && distance > maxAllowedDistance) {
         continue;
       }
 

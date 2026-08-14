@@ -46,3 +46,4 @@ Thumbs.db
 # Directories
 /no_access
 /.agents
+/graphify-out

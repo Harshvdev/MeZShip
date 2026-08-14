@@ -44,7 +44,7 @@ export function useChatSocket(
 
   const wsRef = useRef<WebSocket | null>(null);
   const currentCampusesRef = useRef<string[]>([]);
-  const currentRadiusRef = useRef<number>(2000);
+  const currentRadiusRef = useRef<number>(5000);
   const activeMatchIdRef = useRef<string | null>(null);
   const autoReconnectTimerRef = useRef<any>(null);
 
@@ -198,7 +198,7 @@ export function useChatSocket(
 
   // Connect to Queue
   const startMatching = useCallback(
-    (campusIds: string[], radius = 2000) => {
+    (campusIds: string[] = [], radius = 5000) => {
       if (!userId) return;
       closeCurrentSocket();
 
