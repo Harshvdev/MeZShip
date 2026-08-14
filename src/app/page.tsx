@@ -270,10 +270,10 @@ export default function Home() {
         onSignOut={signOut}
       />
 
-      <main className="flex-1 max-w-3xl w-full mx-auto p-3 sm:p-6 flex flex-col justify-center">
+      <main className="flex-1 max-w-3xl w-full mx-auto px-2 py-3 sm:p-6 flex flex-col justify-center">
         {/* BAN SCREEN STATE */}
         {isBanned ? (
-          <div className="p-8 rounded-3xl glass-panel border border-rose-500/30 text-center max-w-md mx-auto animate-fade-in shadow-2xl">
+          <div className="p-6 sm:p-8 rounded-3xl glass-panel border border-rose-500/30 text-center max-w-md mx-auto animate-fade-in shadow-2xl">
             <div className="w-12 h-12 rounded-2xl bg-rose-500/10 border border-rose-500/20 text-rose-400 flex items-center justify-center mx-auto mb-4">
               <AlertTriangle className="w-6 h-6" />
             </div>
@@ -287,37 +287,37 @@ export default function Home() {
           </div>
         ) : (
           /* OPENTALK STYLE CHAT CONTAINER */
-          <div className="w-full rounded-3xl glass-panel border border-white/10 overflow-hidden shadow-2xl flex flex-col h-[580px] max-h-[84vh] relative transition-all duration-300">
+          <div className="w-full rounded-2xl sm:rounded-3xl glass-panel border border-white/10 overflow-hidden shadow-2xl flex flex-col h-[520px] sm:h-[580px] max-h-[calc(100dvh-5.5rem)] relative transition-all duration-300">
             {/* Top Scope & Info Header */}
-            <div className="px-5 py-3.5 border-b border-white/10 bg-white/[0.03] flex items-center justify-between">
+            <div className="px-3.5 sm:px-5 py-2.5 sm:py-3.5 border-b border-white/10 bg-white/[0.03] flex items-center justify-between gap-2">
               {chatState === "MATCHED" && partner ? (
                 /* Partner Header when Matched */
                 <>
-                  <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-full bg-gradient-to-tr from-teal-500 to-indigo-600 flex items-center justify-center font-bold text-white text-xs shadow-md">
+                  <div className="flex items-center gap-2.5 sm:gap-3 min-w-0 flex-1">
+                    <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-gradient-to-tr from-teal-500 to-indigo-600 flex items-center justify-center font-bold text-white text-xs shadow-md shrink-0">
                       {partner.displayName?.slice(0, 2).toUpperCase() || "??"}
                     </div>
-                    <div>
-                      <div className="text-sm font-semibold text-white leading-tight">
+                    <div className="min-w-0 flex-1">
+                      <div className="text-xs sm:text-sm font-semibold text-white leading-tight truncate">
                         {partner.displayName || "Connected Partner"}
                       </div>
-                      <div className="flex items-center gap-1.5 text-xs text-teal-400">
-                        <MapPin className="w-3 h-3" />
-                        <span>~{partner.distanceMeters ?? 150}m away</span>
+                      <div className="flex items-center gap-1 text-[11px] sm:text-xs text-teal-400 mt-0.5">
+                        <MapPin className="w-2.5 h-2.5 sm:w-3 sm:h-3 shrink-0" />
+                        <span className="truncate">~{partner.distanceMeters ?? 150}m away</span>
                       </div>
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
                     {partnerLeaveReason ? (
-                      <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-400 text-xs font-medium">
+                      <div className="flex items-center gap-1.5 px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-400 text-[11px] sm:text-xs font-medium">
                         <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
-                        <span>Disconnected</span>
+                        <span>Left</span>
                       </div>
                     ) : (
-                      <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-medium">
+                      <div className="flex items-center gap-1.5 px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[11px] sm:text-xs font-medium">
                         <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                        <span>Live 1-to-1</span>
+                        <span>Live 1:1</span>
                       </div>
                     )}
 
@@ -380,25 +380,25 @@ export default function Home() {
                 </>
               ) : (
                 /* Default Header Pill */
-                <div className="flex items-center justify-between w-full">
+                <div className="flex items-center justify-between w-full gap-2 min-w-0">
                   <button
                     type="button"
                     onClick={() => setShowLocationModal(true)}
-                    className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-teal-500/10 border border-teal-500/20 hover:border-teal-400/40 text-teal-300 text-xs font-medium transition-all group"
+                    className="inline-flex items-center gap-1.5 sm:gap-2 px-3 py-1 rounded-full bg-teal-500/10 border border-teal-500/20 hover:border-teal-400/40 text-teal-300 text-xs font-medium transition-all group max-w-[78%] min-w-0"
                     title="Click to refine location calibration"
                   >
                     <MapPin className="w-3.5 h-3.5 text-teal-400 shrink-0" />
-                    <span>
+                    <span className="truncate">
                       {insideCampus
                         ? `${insideCampus.name.split("(")[0].trim()} · < 5 km`
                         : locationName
                         ? `${locationName} · < 5 km`
                         : "Nearby · Under 5 km"}
                     </span>
-                    <Sliders className="w-3 h-3 text-teal-400/60 group-hover:text-teal-300 ml-0.5" />
+                    <Sliders className="w-3 h-3 text-teal-400/60 group-hover:text-teal-300 shrink-0 ml-1" />
                   </button>
 
-                  <div className="flex items-center gap-1.5 text-xs text-gray-500 font-medium">
+                  <div className="flex items-center gap-1.5 text-xs text-gray-400 font-medium shrink-0">
                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
                     <span>Auto-Match</span>
                   </div>
@@ -411,20 +411,15 @@ export default function Home() {
               {chatState === "IDLE" ? (
                 /* IDLE STATE: Clean OpenTalk Card */
                 <div className="flex-1 flex flex-col justify-between animate-fade-in">
-                  <div>
-                    {/* Filter Pill Badge */}
-                    <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/5 border border-white/10 text-gray-300 text-xs font-medium w-fit mb-5">
-                      <span className="text-amber-400">⚡</span>
-                      <span>Nearby Matchmaking (under 5 km)</span>
-                      <span className="text-gray-500">🔒</span>
-                    </div>
-
+                  <div className="space-y-6 pt-2">
                     {/* Welcoming Message Bubble */}
-                    <div className="p-4 sm:p-5 rounded-2xl bg-white/5 border border-white/10 max-w-lg mb-6 shadow-lg">
-                      <p className="text-sm sm:text-base text-gray-200 leading-relaxed">
-                        Welcome back to <span className="font-bold text-white">MeZShip</span> 🎉 —{" "}
-                        <span className="font-bold text-emerald-400">{onlineCount}</span>{" "}
-                        {onlineCount === 1 ? "person" : "people"} online right now. Ready to meet someone nearby?
+                    <div className="p-4 sm:p-5 rounded-2xl bg-white/5 border border-white/10 max-w-lg shadow-lg">
+                      <h2 className="text-base sm:text-lg font-bold text-white mb-1.5">
+                        Welcome back to MeZShip 🎉
+                      </h2>
+                      <p className="text-xs sm:text-sm text-gray-300 leading-relaxed">
+                        <span className="font-semibold text-emerald-400">{onlineCount}</span>{" "}
+                        {onlineCount === 1 ? "person" : "people"} online right now. Connect with someone nearby anonymously in real-time.
                       </p>
                     </div>
 
@@ -443,25 +438,25 @@ export default function Home() {
                   </div>
 
                   {/* Highlights Footer */}
-                  <div className="pt-6 border-t border-white/5 flex flex-wrap items-center gap-4 sm:gap-6 text-xs text-gray-400">
+                  <div className="pt-4 sm:pt-6 border-t border-white/5 flex flex-wrap items-center gap-3 sm:gap-6 text-[11px] sm:text-xs text-gray-400">
                     <div className="flex items-center gap-1.5">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" />
                       <span>Automatic 5 km radius</span>
                     </div>
                     <div className="flex items-center gap-1.5">
-                      <span className="w-1.5 h-1.5 rounded-full bg-teal-400" />
+                      <span className="w-1.5 h-1.5 rounded-full bg-teal-400 shrink-0" />
                       <span>Pseudonymous identity</span>
                     </div>
                     <div className="flex items-center gap-1.5">
-                      <span className="w-1.5 h-1.5 rounded-full bg-indigo-400" />
+                      <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 shrink-0" />
                       <span>Zero chat retention</span>
                     </div>
                   </div>
                 </div>
               ) : chatState === "SEARCHING" ? (
                 /* SEARCHING STATE: Radar Scanning Indicator */
-                <div className="flex-1 flex flex-col items-center justify-center text-center p-6 animate-fade-in">
-                  <div className="relative flex items-center justify-center w-48 h-48 my-4">
+                <div className="flex-1 flex flex-col items-center justify-center text-center p-4 sm:p-6 animate-fade-in">
+                  <div className="relative flex items-center justify-center w-36 h-36 sm:w-48 sm:h-48 my-3 sm:my-4">
                     <div className="absolute inset-0 rounded-full border border-teal-500/20 animate-radar-pulse" />
                     <div
                       className="absolute inset-0 rounded-full border border-indigo-500/30 animate-radar-pulse"
@@ -473,24 +468,24 @@ export default function Home() {
                     />
 
                     {/* Center Node */}
-                    <div className="relative z-10 w-16 h-16 rounded-full bg-gradient-to-tr from-teal-500 to-indigo-600 flex items-center justify-center shadow-xl shadow-teal-500/30 border border-white/20">
-                      <Radio className="w-7 h-7 text-white animate-pulse" />
+                    <div className="relative z-10 w-12 h-12 sm:w-16 sm:h-16 rounded-full bg-gradient-to-tr from-teal-500 to-indigo-600 flex items-center justify-center shadow-xl shadow-teal-500/30 border border-white/20">
+                      <Radio className="w-5 h-5 sm:w-7 sm:h-7 text-white animate-pulse" />
                     </div>
                   </div>
 
-                  <h3 className="text-base font-semibold text-white mb-1">
+                  <h3 className="text-sm sm:text-base font-semibold text-white mb-1">
                     Searching for someone nearby
                   </h3>
-                  <p className="text-xs text-gray-400 max-w-sm mb-4">
+                  <p className="text-[11px] sm:text-xs text-gray-400 max-w-sm mb-3 sm:mb-4">
                     {statusMessage || "Scanning for online students within 5 km radius..."}
                   </p>
 
-                  <div className="flex items-center gap-2 mb-6">
-                    <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-xs text-emerald-300 font-medium">
-                      <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                  <div className="flex items-center gap-2 mb-4 sm:mb-6">
+                    <div className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-[11px] sm:text-xs text-emerald-300 font-medium">
+                      <span className="w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full bg-emerald-400 animate-pulse" />
                       <span>{onlineCount} online</span>
                     </div>
-                    <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-teal-500/10 border border-teal-500/20 text-xs text-teal-300 font-medium">
+                    <div className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1 rounded-full bg-teal-500/10 border border-teal-500/20 text-[11px] sm:text-xs text-teal-300 font-medium">
                       <MapPin className="w-3 h-3" />
                       <span>Under 5 km</span>
                     </div>
@@ -498,44 +493,44 @@ export default function Home() {
 
                   <button
                     onClick={leave}
-                    className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white border border-white/10 text-xs transition-colors"
+                    className="flex items-center gap-1.5 px-3.5 sm:px-4 py-1.5 sm:py-2 rounded-xl bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white border border-white/10 text-xs transition-colors"
                   >
                     <X className="w-3.5 h-3.5" />
-                    <span>Cancel Search (Esc)</span>
+                    <span>Cancel Search</span>
                   </button>
                 </div>
               ) : chatState === "PARTNER_SKIPPED" ? (
                 /* PARTNER SKIPPED / LEFT STATE */
-                <div className="flex-1 flex flex-col items-center justify-center text-center p-6 animate-fade-in max-w-md mx-auto">
-                  <div className="w-12 h-12 rounded-2xl bg-teal-500/10 border border-teal-500/20 text-teal-400 flex items-center justify-center mb-4">
-                    <RotateCcw className="w-6 h-6" />
+                <div className="flex-1 flex flex-col items-center justify-center text-center p-4 sm:p-6 animate-fade-in max-w-md mx-auto">
+                  <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-2xl bg-teal-500/10 border border-teal-500/20 text-teal-400 flex items-center justify-center mb-3 sm:mb-4">
+                    <RotateCcw className="w-5 h-5 sm:w-6 sm:h-6" />
                   </div>
-                  <h3 className="text-base font-semibold text-white mb-1">
+                  <h3 className="text-sm sm:text-base font-semibold text-white mb-1">
                     {partnerLeaveReason === "leave"
                       ? "Partner Left the Chat"
                       : partnerLeaveReason === "disconnect"
                       ? "Partner Disconnected"
                       : "Partner Skipped"}
                   </h3>
-                  <p className="text-xs text-gray-400 mb-6">
+                  <p className="text-[11px] sm:text-xs text-gray-400 mb-5 sm:mb-6">
                     {partnerLeaveReason === "leave"
                       ? "Your chat partner left the conversation."
                       : partnerLeaveReason === "disconnect"
                       ? "Partner disconnected. Reconnecting nearby..."
                       : "Partner skipped. Searching for next person within 5 km..."}
                   </p>
-                  <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-2.5 sm:gap-3">
                     <button
                       onClick={leave}
-                      className="px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-gray-300 text-xs font-medium transition-colors"
+                      className="px-3.5 sm:px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-gray-300 text-xs font-medium transition-colors"
                     >
                       Exit to Home
                     </button>
                     <button
                       onClick={handleStartChat}
-                      className="px-5 py-2 rounded-xl bg-teal-500 hover:bg-teal-400 text-gray-950 text-xs font-bold shadow-lg shadow-teal-500/25 transition-all"
+                      className="px-4 sm:px-5 py-2 rounded-xl bg-teal-500 hover:bg-teal-400 text-gray-950 text-xs font-bold shadow-lg shadow-teal-500/25 transition-all"
                     >
-                      Find Next Partner (Esc)
+                      Find Next Partner
                     </button>
                   </div>
                 </div>
@@ -543,10 +538,10 @@ export default function Home() {
                 /* MATCHED ACTIVE MESSAGES STREAM */
                 <div className="flex-1 flex flex-col justify-between">
                   {messages.length === 0 ? (
-                    <div className="h-full flex flex-col items-center justify-center text-center p-6 text-gray-500 text-xs my-auto">
-                      <Sparkles className="w-8 h-8 text-teal-400/50 mb-2 animate-pulse" />
+                    <div className="h-full flex flex-col items-center justify-center text-center p-4 sm:p-6 text-gray-500 text-xs my-auto">
+                      <Sparkles className="w-7 h-7 sm:w-8 sm:h-8 text-teal-400/50 mb-2 animate-pulse" />
                       <p className="font-medium text-gray-300">You are connected!</p>
-                      <p className="text-gray-500 mt-0.5">
+                      <p className="text-gray-500 mt-0.5 text-[11px] sm:text-xs">
                         Messages are live in memory and never written to disk.
                       </p>
                     </div>
@@ -563,16 +558,16 @@ export default function Home() {
             </div>
 
             {/* Bottom Control Bar (OpenTalk Signature Bar) */}
-            <div className="px-4 py-3 bg-white/[0.04] border-t border-white/10 flex items-center gap-2.5">
+            <div className="px-2.5 sm:px-4 py-2 sm:py-3 bg-white/[0.04] border-t border-white/10 flex items-center gap-1.5 sm:gap-2.5">
               {/* Dynamic Left Action Button */}
               {chatState === "IDLE" ? (
                 <button
                   type="button"
                   onClick={handleStartChat}
-                  className="flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl bg-teal-500 hover:bg-teal-400 text-gray-950 font-bold text-sm shadow-lg shadow-teal-500/20 transition-all hover:scale-[1.02] active:scale-[0.98] shrink-0"
+                  className="flex items-center justify-center gap-1.5 px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl bg-teal-500 hover:bg-teal-400 text-gray-950 font-bold text-xs sm:text-sm shadow-lg shadow-teal-500/20 transition-all hover:scale-[1.02] active:scale-[0.98] shrink-0"
                 >
                   <span>Start</span>
-                  <span className="text-[10px] font-semibold bg-black/20 text-black px-1.5 py-0.5 rounded">
+                  <span className="hidden md:inline-block text-[10px] font-semibold bg-black/20 text-black px-1.5 py-0.5 rounded">
                     Esc
                   </span>
                 </button>
@@ -580,10 +575,10 @@ export default function Home() {
                 <button
                   type="button"
                   onClick={leave}
-                  className="flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/30 font-semibold text-sm transition-all shrink-0"
+                  className="flex items-center justify-center gap-1.5 px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/30 font-semibold text-xs sm:text-sm transition-all shrink-0"
                 >
                   <span>Stop</span>
-                  <span className="text-[10px] font-semibold bg-rose-500/30 text-rose-200 px-1.5 py-0.5 rounded">
+                  <span className="hidden md:inline-block text-[10px] font-semibold bg-rose-500/30 text-rose-200 px-1.5 py-0.5 rounded">
                     Esc
                   </span>
                 </button>
@@ -591,10 +586,10 @@ export default function Home() {
                 <button
                   type="button"
                   onClick={skip}
-                  className="flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-sm shadow-lg shadow-indigo-600/30 transition-all hover:scale-[1.02] active:scale-[0.98] shrink-0"
+                  className="flex items-center justify-center gap-1.5 px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs sm:text-sm shadow-lg shadow-indigo-600/30 transition-all hover:scale-[1.02] active:scale-[0.98] shrink-0"
                 >
                   <span>Skip</span>
-                  <span className="text-[10px] font-semibold bg-black/30 text-indigo-100 px-1.5 py-0.5 rounded">
+                  <span className="hidden md:inline-block text-[10px] font-semibold bg-black/30 text-indigo-100 px-1.5 py-0.5 rounded">
                     Esc
                   </span>
                 </button>
@@ -602,17 +597,17 @@ export default function Home() {
                 <button
                   type="button"
                   onClick={handleStartChat}
-                  className="flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl bg-teal-500 hover:bg-teal-400 text-gray-950 font-bold text-sm shadow-lg shadow-teal-500/20 transition-all hover:scale-[1.02] active:scale-[0.98] shrink-0"
+                  className="flex items-center justify-center gap-1.5 px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl bg-teal-500 hover:bg-teal-400 text-gray-950 font-bold text-xs sm:text-sm shadow-lg shadow-teal-500/20 transition-all hover:scale-[1.02] active:scale-[0.98] shrink-0"
                 >
                   <span>Next</span>
-                  <span className="text-[10px] font-semibold bg-black/20 text-black px-1.5 py-0.5 rounded">
+                  <span className="hidden md:inline-block text-[10px] font-semibold bg-black/20 text-black px-1.5 py-0.5 rounded">
                     Esc
                   </span>
                 </button>
               )}
 
               {/* Center Input Form */}
-              <form onSubmit={handleSend} className="flex-1 flex items-center gap-2">
+              <form onSubmit={handleSend} className="flex-1 flex items-center gap-1.5 sm:gap-2 min-w-0">
                 <input
                   ref={inputRef}
                   type="text"
@@ -621,24 +616,24 @@ export default function Home() {
                   onChange={(e) => setInputText(e.target.value)}
                   placeholder={
                     chatState === "IDLE"
-                      ? "Press Start or 'Esc' to begin chatting..."
+                      ? "Start chatting nearby..."
                       : chatState === "SEARCHING"
-                      ? "Searching for nearby users within 5 km..."
+                      ? "Searching for nearby users..."
                       : partnerLeaveReason
-                      ? "Partner left. Press 'Next' or Esc to find a new match."
-                      : "Type a message (max 500 characters)..."
+                      ? "Partner left. Press Next to match."
+                      : "Type a message (max 500 chars)..."
                   }
                   maxLength={500}
-                  className="w-full px-4 py-2.5 rounded-xl bg-black/40 border border-white/10 focus:border-teal-400 focus:outline-none text-sm text-white placeholder-gray-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="w-full min-w-0 px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl bg-black/40 border border-white/10 focus:border-teal-400 focus:outline-none text-xs sm:text-sm text-white placeholder-gray-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 />
                 <button
                   type="submit"
                   disabled={
                     chatState !== "MATCHED" || !inputText.trim() || Boolean(partnerLeaveReason)
                   }
-                  className="p-2.5 rounded-xl bg-teal-500 hover:bg-teal-400 disabled:opacity-30 disabled:hover:bg-teal-500 text-gray-950 transition-all shrink-0 shadow-md"
+                  className="p-2 sm:p-2.5 rounded-xl bg-teal-500 hover:bg-teal-400 disabled:opacity-30 disabled:hover:bg-teal-500 text-gray-950 transition-all shrink-0 shadow-md"
                 >
-                  <Send className="w-4 h-4" />
+                  <Send className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                 </button>
               </form>
             </div>
