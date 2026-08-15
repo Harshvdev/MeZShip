@@ -24,7 +24,7 @@ export interface PartnerInfo {
   userId: string;
   displayName: string;
   distanceMeters: number;
-  campusId: string;
+  campusId?: string;
 }
 
 export function useChatSocket(
@@ -44,7 +44,6 @@ export function useChatSocket(
   const [onlineCount, setOnlineCount] = useState<number>(0);
 
   const wsRef = useRef<WebSocket | null>(null);
-  const currentCampusesRef = useRef<string[]>([]);
   const currentRadiusRef = useRef<number>(5000);
   const activeMatchIdRef = useRef<string | null>(null);
   const autoReconnectTimerRef = useRef<any>(null);
@@ -153,8 +152,6 @@ export function useChatSocket(
       wsRef.current = ws;
 
       ws.onopen = () => {
-        setChatState("MATCHED");
-        setStatusMessage("Connected! Say hello.");
         startHeartbeat(ws);
       };
 
@@ -167,7 +164,12 @@ export function useChatSocket(
             return;
           }
 
-          if (data.type === "message") {
+          if (data.type === "chat_ready") {
+            setChatState("MATCHED");
+            setStatusMessage("Connected! Start chatting.");
+          } else if (data.type === "partner_connected") {
+            setStatusMessage("Partner connected. Say hi!");
+          } else if (data.type === "message") {
             setMessages((prev) => [
               ...prev,
               {
@@ -179,67 +181,43 @@ export function useChatSocket(
               },
             ]);
           } else if (data.type === "partner_skipped") {
-            const reason = data.reason || "skip";
-            const noticeText =
-              reason === "leave"
-                ? "👋 Partner left. Connecting to next person..."
-                : reason === "disconnect"
-                ? "⚠️ Partner disconnected. Connecting to next person..."
-                : "⚡ Partner skipped. Connecting to next person...";
-
-            if (activeMatchIdRef.current) {
-              updateMatchLogEnd(activeMatchIdRef.current, reason);
+            setPartnerLeaveReason(data.reason || "skip");
+            setChatState("PARTNER_SKIPPED");
+            if (data.reason === "leave") {
+              setStatusMessage("Partner left the chat.");
+            } else if (data.reason === "disconnect") {
+              setStatusMessage("Partner disconnected.");
+            } else {
+              setStatusMessage("Partner skipped. Searching for next match...");
             }
 
-            setPartnerLeaveReason(reason);
-            setStatusMessage(noticeText);
-            setMessages((prev) => [
-              ...prev,
-              {
-                id: `sys_${Date.now()}`,
-                senderId: "system",
-                isSelf: false,
-                text: noticeText,
-                timestamp: Date.now(),
-              },
-            ]);
+            if (activeMatchIdRef.current) {
+              updateMatchLogEnd(activeMatchIdRef.current, data.reason || "skip");
+            }
 
-            // Auto-reconnect seamlessly after brief status cue (250ms)
-            if (autoReconnectTimerRef.current) clearTimeout(autoReconnectTimerRef.current);
-            autoReconnectTimerRef.current = setTimeout(() => {
-              startMatching(currentCampusesRef.current, currentRadiusRef.current);
-            }, 250);
-          } else if (data.type === "error") {
-            setStatusMessage(data.message);
+            // If partner skipped/disconnected, seamlessly re-enter queue after brief pause
+            if (data.reason === "skip" || data.reason === "disconnect") {
+              if (autoReconnectTimerRef.current) clearTimeout(autoReconnectTimerRef.current);
+              autoReconnectTimerRef.current = setTimeout(() => {
+                startMatching(currentRadiusRef.current);
+              }, 600);
+            }
           }
         } catch (e) {
-          console.error("Room WS Parse Error:", e);
+          console.error("Room WS Parse error:", e);
         }
       };
 
-      ws.onclose = () => {
+      ws.onclose = (event) => {
         setChatState((prev) => {
           if (prev === "MATCHED") {
+            setStatusMessage("Disconnected from room. Finding next partner...");
             if (activeMatchIdRef.current) {
               updateMatchLogEnd(activeMatchIdRef.current, "disconnect");
             }
-            setPartnerLeaveReason("disconnect");
-            setStatusMessage("Partner disconnected. Re-connecting...");
-            setMessages((msgs) => [
-              ...msgs,
-              {
-                id: `sys_${Date.now()}`,
-                senderId: "system",
-                isSelf: false,
-                text: "⚠️ Partner disconnected. Re-connecting to next person...",
-                timestamp: Date.now(),
-              },
-            ]);
-
-            // Auto-reconnect
             if (autoReconnectTimerRef.current) clearTimeout(autoReconnectTimerRef.current);
             autoReconnectTimerRef.current = setTimeout(() => {
-              startMatching(currentCampusesRef.current, currentRadiusRef.current);
+              startMatching(currentRadiusRef.current);
             }, 250);
 
             return "PARTNER_SKIPPED";
@@ -257,25 +235,23 @@ export function useChatSocket(
 
   // Connect to Queue
   const startMatching = useCallback(
-    (campusIds: string[] = [], radius = 5000) => {
+    (radius = 5000) => {
       if (!userId) return;
       closeCurrentSocket();
 
-      currentCampusesRef.current = campusIds;
       currentRadiusRef.current = radius;
       setMessages([]);
       setPartner(null);
       setCurrentMatchId(null);
       setChatState("SEARCHING");
-      setStatusMessage("Searching for a compatible nearby match...");
+      const radiusKm = (radius / 1000).toFixed(0);
+      setStatusMessage(`Searching for nearby users within ${radiusKm} km...`);
 
       const wsUrl = `${getWsBaseUrl("/ws/queue")}?userId=${encodeURIComponent(
         userId
       )}&displayName=${encodeURIComponent(
         displayName || ""
-      )}&lat=${userLat || 0}&lng=${userLng || 0}&campuses=${encodeURIComponent(
-        campusIds.join(",")
-      )}&radius=${radius}&token=${encodeURIComponent(token || "")}`;
+      )}&lat=${userLat || 0}&lng=${userLng || 0}&radius=${radius}&token=${encodeURIComponent(token || "")}`;
 
       const ws = new WebSocket(wsUrl);
       wsRef.current = ws;
@@ -302,7 +278,7 @@ export function useChatSocket(
               matchId: data.matchId,
               partnerUserId: data.partner.userId,
               partnerDisplayName: data.partner.displayName,
-              campusId: data.campusId,
+              campusId: data.campusId || "nearby",
               matchedAt: Date.now(),
             });
 
@@ -386,7 +362,7 @@ export function useChatSocket(
       }
     }
     // Re-queue
-    startMatching(currentCampusesRef.current, currentRadiusRef.current);
+    startMatching(currentRadiusRef.current);
   }, [chatState, startMatching]);
 
   // Leave completely

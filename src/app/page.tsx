@@ -1,9 +1,8 @@
 "use client";
 
-import { useState, useEffect, useMemo, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { Navbar } from "@/components/Navbar";
 import { MessageBubble } from "@/components/chat/MessageBubble";
-import { CampusSelector, type CampusOption } from "@/components/matching/CampusSelector";
 import { ReportModal } from "@/components/modals/ReportModal";
 import { BlockConfirmModal } from "@/components/modals/BlockConfirmModal";
 import { SettingsModal } from "@/components/modals/SettingsModal";
@@ -30,6 +29,14 @@ import {
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 
+const RADIUS_PRESETS = [
+  { label: "1 km", value: 1000 },
+  { label: "5 km", value: 5000 },
+  { label: "10 km", value: 10000 },
+  { label: "25 km", value: 25000 },
+  { label: "50 km", value: 50000 },
+];
+
 export default function Home() {
   const router = useRouter();
   const { user, profile, token, loading: authLoading, updateDisplayName, signOut } = useAuth();
@@ -45,9 +52,6 @@ export default function Home() {
     resetToAuto,
   } = useGeolocation();
 
-  const [campuses, setCampuses] = useState<CampusOption[]>([]);
-  const [selectedCampusIds, setSelectedCampusIds] = useState<string[]>([]);
-  const [campusesLoading, setCampusesLoading] = useState<boolean>(true);
   const [matchingRadius, setMatchingRadius] = useState<number>(5000);
   const [isBanned, setIsBanned] = useState(false);
   const [banReason, setBanReason] = useState<string | null>(null);
@@ -76,7 +80,6 @@ export default function Home() {
     partner,
     statusMessage,
     partnerLeaveReason,
-    queueCount,
     onlineCount,
     setOnlineCount,
     startMatching,
@@ -145,49 +148,12 @@ export default function Home() {
     };
   }, [token, authLoading, setOnlineCount]);
 
-  // Fetch available campuses based on user location
-  useEffect(() => {
-    async function loadCampuses() {
-      setCampusesLoading(true);
-      try {
-        const queryParams = lat && lng ? `?lat=${lat}&lng=${lng}` : "";
-        const res = await fetch(getApiUrl(`/api/campuses${queryParams}`));
-        if (res.ok) {
-          const data = (await res.json()) as { campuses?: CampusOption[] };
-          if (data.campuses) {
-            setCampuses(data.campuses);
-          }
-        } else {
-          setCampuses([]);
-        }
-      } catch (err) {
-        console.error("Failed to load campuses:", err);
-        setCampuses([]);
-      } finally {
-        setCampusesLoading(false);
-      }
-    }
-    loadCampuses();
-  }, [lat, lng]);
-
-  // Fetch User Preferences & Check Ban State
+  // Check Ban State
   useEffect(() => {
     if (!token) return;
 
     async function checkUserStatus() {
       try {
-        // Preferences
-        const prefRes = await fetch(getApiUrl("/api/preferences"), {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (prefRes.ok) {
-          const data = (await prefRes.json()) as { preferences?: string[] };
-          if (data.preferences && data.preferences.length > 0) {
-            setSelectedCampusIds(data.preferences);
-          }
-        }
-
-        // Ban Check
         const banRes = await fetch(getApiUrl("/api/bans/check"), {
           headers: { Authorization: `Bearer ${token}` },
         });
@@ -206,31 +172,13 @@ export default function Home() {
     checkUserStatus();
   }, [token]);
 
-  const handleUpdateCampuses = async (ids: string[]) => {
-    setSelectedCampusIds(ids);
-    if (!token) return;
-    try {
-      await fetch(getApiUrl("/api/preferences"), {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ campusIds: ids }),
-      });
-    } catch (e) {
-      console.error("Failed to save preferences:", e);
-    }
-  };
-
   const handleStartChat = useCallback(() => {
     if (!user) {
       router.push("/auth");
       return;
     }
-    // Default 5 km radius proximity match
-    startMatching(selectedCampusIds, matchingRadius);
-  }, [user, router, startMatching, selectedCampusIds, matchingRadius]);
+    startMatching(matchingRadius);
+  }, [user, router, startMatching, matchingRadius]);
 
   const handleSend = (e: React.FormEvent) => {
     e.preventDefault();
@@ -266,8 +214,7 @@ export default function Home() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [chatState, skip, leave, handleStartChat]);
 
-  const insideCampus = useMemo(() => campuses.find((c) => c.isInside), [campuses]);
-  const nearestCampus = useMemo(() => (campuses.length > 0 ? campuses[0] : null), [campuses]);
+  const radiusKm = Math.round(matchingRadius / 1000);
 
   return (
     <div className="h-full h-dvh max-h-dvh w-full flex flex-col overflow-hidden bg-[#090a0f]">
@@ -275,6 +222,7 @@ export default function Home() {
         profile={profile}
         onlineCount={onlineCount}
         onOpenSettings={() => setShowSettings(true)}
+        onOpenLocation={() => setShowLocationModal(true)}
         onOpenLogs={() => setShowMatchLogs(true)}
         onSignOut={signOut}
       />
@@ -390,26 +338,14 @@ export default function Home() {
               ) : (
                 /* Default Header Pill */
                 <div className="flex items-center justify-between w-full gap-2 min-w-0">
-                  <button
-                    type="button"
-                    onClick={() => setShowLocationModal(true)}
-                    className="inline-flex items-center gap-1.5 sm:gap-2 px-3 py-1 rounded-full bg-teal-500/10 border border-teal-500/20 hover:border-teal-400/40 text-teal-300 text-xs font-medium transition-all group max-w-[78%] min-w-0"
-                    title="Click to refine location calibration"
-                  >
-                    <MapPin className="w-3.5 h-3.5 text-teal-400 shrink-0" />
-                    <span className="truncate">
-                      {insideCampus
-                        ? `${insideCampus.name.split("(")[0].trim()} · < 5 km`
-                        : locationName
-                        ? `${locationName} · < 5 km`
-                        : "Nearby · Under 5 km"}
-                    </span>
-                    <Sliders className="w-3 h-3 text-teal-400/60 group-hover:text-teal-300 shrink-0 ml-1" />
-                  </button>
+                  <div className="flex items-center gap-2 text-xs font-semibold text-white">
+                    <span className="w-2 h-2 rounded-full bg-teal-400" />
+                    <span>MeZShip Live 1:1</span>
+                  </div>
 
                   <div className="flex items-center gap-1.5 text-xs text-gray-400 font-medium shrink-0">
                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                    <span>Auto-Match</span>
+                    <span>Distance Match</span>
                   </div>
                 </div>
               )}
@@ -418,22 +354,75 @@ export default function Home() {
             {/* Middle Main Viewport */}
             <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-3 sm:p-5 flex flex-col">
               {chatState === "IDLE" ? (
-                /* IDLE STATE: Clean OpenTalk Card */
+                /* IDLE STATE: Clean OpenTalk Card with Distance Radius Slider */
                 <div className="flex-1 flex flex-col justify-between animate-fade-in my-auto">
-                  <div className="space-y-5 pt-1">
+                  <div className="space-y-4 pt-1">
                     {/* Welcoming Message Bubble */}
                     <div className="p-4 sm:p-5 rounded-2xl bg-white/5 border border-white/10 max-w-lg shadow-lg">
-                      <h2 className="text-base sm:text-lg font-bold text-white mb-1.5">
-                        Welcome back to MeZShip 🎉
+                      <h2 className="text-base sm:text-lg font-bold text-white mb-1">
+                        Welcome to MeZShip 🎉
                       </h2>
                       <p className="text-xs sm:text-sm text-gray-300 leading-relaxed">
                         <span className="font-semibold text-emerald-400">{onlineCount}</span>{" "}
-                        {onlineCount === 1 ? "person" : "people"} online right now. Connect with someone nearby in real-time.
+                        {onlineCount === 1 ? "person" : "people"} online right now. Connect spontaneously with nearby users based on distance.
                       </p>
                     </div>
 
+                    {/* Radius Slider Card */}
+                    <div className="p-4 sm:p-5 rounded-2xl bg-white/5 border border-white/10 max-w-lg shadow-lg space-y-3">
+                      <div className="flex items-center justify-between">
+                        <label className="text-xs sm:text-sm font-semibold text-white flex items-center gap-2">
+                          <Sliders className="w-4 h-4 text-teal-400" />
+                          <span>Search Radius</span>
+                        </label>
+                        <span className="text-xs sm:text-sm font-bold px-3 py-1 rounded-xl bg-teal-500/15 border border-teal-500/30 text-teal-300">
+                          {radiusKm} km
+                        </span>
+                      </div>
+
+                      {/* Slider Input */}
+                      <div className="space-y-1.5">
+                        <input
+                          type="range"
+                          min="1"
+                          max="50"
+                          step="1"
+                          value={radiusKm}
+                          onChange={(e) => setMatchingRadius(parseInt(e.target.value, 10) * 1000)}
+                          className="w-full h-2.5 bg-white/10 rounded-lg appearance-none cursor-pointer accent-teal-400 hover:accent-teal-300 transition-all"
+                        />
+                        <div className="flex items-center justify-between text-[11px] text-gray-400 font-medium px-0.5">
+                          <span>1 km</span>
+                          <span>10 km</span>
+                          <span>25 km</span>
+                          <span>50 km</span>
+                        </div>
+                      </div>
+
+                      {/* Radius Preset Chips */}
+                      <div className="flex items-center gap-1.5 flex-wrap pt-1">
+                        {RADIUS_PRESETS.map((p) => {
+                          const isSelected = matchingRadius === p.value;
+                          return (
+                            <button
+                              key={p.value}
+                              type="button"
+                              onClick={() => setMatchingRadius(p.value)}
+                              className={`px-3 py-1.5 rounded-xl text-xs font-semibold border transition-all ${
+                                isSelected
+                                  ? "bg-teal-500 text-gray-950 border-teal-400 shadow-md shadow-teal-500/20 scale-105"
+                                  : "bg-white/5 hover:bg-white/10 border-white/10 text-gray-300"
+                              }`}
+                            >
+                              {p.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
                     {/* Start Chatting Button */}
-                    <div>
+                    <div className="pt-1">
                       <button
                         onClick={handleStartChat}
                         className="flex items-center gap-3 px-6 py-3.5 rounded-2xl bg-gradient-to-r from-teal-500 via-indigo-600 to-purple-600 hover:from-teal-400 hover:to-purple-500 text-white font-semibold text-sm shadow-xl shadow-teal-500/20 transition-all hover:scale-[1.02] active:scale-[0.99] group"
@@ -441,7 +430,7 @@ export default function Home() {
                         <span className="text-amber-300 text-base group-hover:translate-x-0.5 transition-transform">
                           ▶
                         </span>
-                        <span>Start chatting</span>
+                        <span>Start chatting (within {radiusKm} km)</span>
                       </button>
                     </div>
                   </div>
@@ -450,7 +439,7 @@ export default function Home() {
                   <div className="pt-4 sm:pt-6 border-t border-white/5 flex flex-wrap items-center gap-3 sm:gap-6 text-[11px] sm:text-xs text-gray-400 mt-6">
                     <div className="flex items-center gap-1.5">
                       <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" />
-                      <span>Automatic 5 km radius</span>
+                      <span>Radius: {radiusKm} km</span>
                     </div>
                     <div className="flex items-center gap-1.5">
                       <span className="w-1.5 h-1.5 rounded-full bg-teal-400 shrink-0" />
@@ -486,7 +475,7 @@ export default function Home() {
                     Searching for someone nearby
                   </h3>
                   <p className="text-[11px] sm:text-xs text-gray-400 max-w-sm mb-3 sm:mb-4">
-                    {statusMessage || "Scanning for online students within 5 km radius..."}
+                    {statusMessage || `Scanning for online users within ${radiusKm} km radius...`}
                   </p>
 
                   <div className="flex items-center gap-2 mb-4 sm:mb-6">
@@ -496,7 +485,7 @@ export default function Home() {
                     </div>
                     <div className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1 rounded-full bg-teal-500/10 border border-teal-500/20 text-[11px] sm:text-xs text-teal-300 font-medium">
                       <MapPin className="w-3 h-3" />
-                      <span>Under 5 km</span>
+                      <span>Within {radiusKm} km</span>
                     </div>
                   </div>
 
@@ -526,7 +515,7 @@ export default function Home() {
                       ? "Your chat partner left the conversation."
                       : partnerLeaveReason === "disconnect"
                       ? "Partner disconnected. Reconnecting nearby..."
-                      : "Partner skipped. Searching for next person within 5 km..."}
+                      : `Partner skipped. Searching for next person within ${radiusKm} km...`}
                   </p>
                   <div className="flex items-center gap-2.5 sm:gap-3">
                     <button
@@ -683,7 +672,7 @@ export default function Home() {
                     chatState === "IDLE"
                       ? "Start chatting nearby..."
                       : chatState === "SEARCHING"
-                      ? "Searching for nearby users..."
+                      ? `Searching for users within ${radiusKm} km...`
                       : partnerLeaveReason
                       ? "Partner left. Press Next to match."
                       : "Type a message (max 500 chars)..."
@@ -716,10 +705,11 @@ export default function Home() {
         isCalibrated={isCalibrated}
         locationName={locationName}
         loading={geoLoading}
+        radiusMeters={matchingRadius}
+        onRadiusChange={setMatchingRadius}
         onRetry={retryGeo}
         onSetLocation={(newLat, newLng, label) => setCalibratedLocation(newLat, newLng, label)}
         onResetAuto={resetToAuto}
-        campuses={campuses}
       />
 
       <SettingsModal
@@ -727,9 +717,6 @@ export default function Home() {
         onClose={() => setShowSettings(false)}
         currentDisplayName={profile?.display_name || ""}
         onUpdateDisplayName={updateDisplayName}
-        campuses={campuses}
-        selectedCampusIds={selectedCampusIds}
-        onUpdateCampuses={handleUpdateCampuses}
         token={token}
       />
 

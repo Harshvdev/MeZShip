@@ -1,7 +1,7 @@
 {
   "name": "MeZShip",
   "short_name": "MeZShip",
-  "description": "A local random-chat platform for spontaneous 1-to-1 conversations with people who are currently inside selected campuses.",
+  "description": "A local random-chat platform for spontaneous 1-to-1 conversations with people nearby based on distance proximity.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#090a0f",

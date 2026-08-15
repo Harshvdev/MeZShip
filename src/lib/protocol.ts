@@ -1,5 +1,5 @@
 export type WebSocketClientMessage =
-  | { type: "join_queue"; userId: string; displayName: string; lat: number; lng: number; campusIds: string[]; radius: number }
+  | { type: "join_queue"; userId: string; displayName: string; lat: number; lng: number; radius: number; campusIds?: string[] }
   | { type: "leave_queue"; userId: string }
   | { type: "message"; text: string }
   | { type: "skip" }
@@ -9,7 +9,7 @@ export type WebSocketClientMessage =
 export type WebSocketServerMessage =
   | { type: "queue_joined"; message: string; queuedAt: number; queueCount?: number; onlineCount?: number }
   | { type: "queue_left" }
-  | { type: "match_found"; matchId: string; campusId: string; distanceMeters: number; partner: { userId: string; displayName: string } }
+  | { type: "match_found"; matchId: string; distanceMeters: number; partner: { userId: string; displayName: string }; campusId?: string }
   | { type: "chat_ready"; matchId: string; userId: string }
   | { type: "partner_connected"; message: string }
   | { type: "message"; id: string; senderId: string; text: string; timestamp: number }

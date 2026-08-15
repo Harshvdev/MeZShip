@@ -1,7 +1,6 @@
 import { DurableObject } from "cloudflare:workers";
 import type { Env, WaitingUser } from "../types";
-import { isCoordinateInsideCampus, haversineDistanceMeters } from "../lib/geo";
-import { getPrisma } from "../lib/db";
+import { haversineDistanceMeters } from "../lib/geo";
 
 interface QueueEntry {
   ws: WebSocket;
@@ -10,7 +9,6 @@ interface QueueEntry {
 
 export class CampusMatcherDO extends DurableObject<Env> {
   private presence: Map<string, number> = new Map(); // userId -> lastSeen timestamp
-  private campusBoundaries: Map<string, any> = new Map();
   private blockPairs: Set<string> = new Set(); // "blocker:blocked"
   private matchHistory: Map<string, Map<string, number>> = new Map(); // userId -> (partnerId -> timestamp)
 
@@ -56,22 +54,6 @@ export class CampusMatcherDO extends DurableObject<Env> {
     }
   }
 
-  private async ensureBoundaries() {
-    if (this.campusBoundaries.size > 0) return;
-    try {
-      const prisma = getPrisma(this.env);
-      const campuses = await prisma.campus.findMany({
-        where: { active: true },
-        select: { id: true, boundary: true },
-      });
-      for (const c of campuses) {
-        this.campusBoundaries.set(c.id, c.boundary);
-      }
-    } catch (e) {
-      console.error("Failed to preload boundaries in DO:", e);
-    }
-  }
-
   /**
    * Retrieves active waiting users from WebSockets across DO hibernations
    */
@@ -94,7 +76,6 @@ export class CampusMatcherDO extends DurableObject<Env> {
 
     // Handle WebSocket upgrade for matchmaking queue
     if (request.headers.get("Upgrade") === "websocket") {
-      await this.ensureBoundaries();
       const pair = new WebSocketPair();
       const [client, server] = Object.values(pair);
 
@@ -102,7 +83,6 @@ export class CampusMatcherDO extends DurableObject<Env> {
       const displayName = url.searchParams.get("displayName") || "Anonymous";
       const lat = parseFloat(url.searchParams.get("lat") || "0");
       const lng = parseFloat(url.searchParams.get("lng") || "0");
-      const campusIds = (url.searchParams.get("campuses") || "").split(",").filter(Boolean);
       const maxRadiusMeters = parseFloat(url.searchParams.get("radius") || "5000");
 
       if (!userId) {
@@ -114,7 +94,6 @@ export class CampusMatcherDO extends DurableObject<Env> {
         displayName,
         lat,
         lng,
-        campusIds,
         maxRadiusMeters,
         queuedAt: Date.now(),
       };
@@ -179,14 +158,6 @@ export class CampusMatcherDO extends DurableObject<Env> {
       );
     }
 
-    if (url.pathname === "/update_campuses" && request.method === "POST") {
-      const campuses: Array<{ id: string; boundary: any }> = await request.json();
-      for (const c of campuses) {
-        this.campusBoundaries.set(c.id, c.boundary);
-      }
-      return new Response(JSON.stringify({ success: true }));
-    }
-
     if (url.pathname === "/update_blocks" && request.method === "POST") {
       const blocks: Array<{ blocker: string; blocked: string }> = await request.json();
       this.blockPairs.clear();
@@ -222,8 +193,10 @@ export class CampusMatcherDO extends DurableObject<Env> {
         if (current) {
           current.lat = data.lat;
           current.lng = data.lng;
+          if (data.radius) {
+            current.maxRadiusMeters = data.radius;
+          }
           ws.serializeAttachment(current);
-          await this.ensureBoundaries();
           this.tryMatch(current.userId);
         }
       }
@@ -245,14 +218,6 @@ export class CampusMatcherDO extends DurableObject<Env> {
     );
   }
 
-  private checkGeofence(user: WaitingUser, campusId: string): boolean {
-    const boundary = this.campusBoundaries.get(campusId);
-    if (!boundary) {
-      return true;
-    }
-    return isCoordinateInsideCampus(user.lng, user.lat, boundary);
-  }
-
   private tryMatch(candidateId: string) {
     const waitingEntries = this.getWaitingEntries();
     const candidateEntry = waitingEntries.find((e) => e.user.userId === candidateId);
@@ -261,7 +226,6 @@ export class CampusMatcherDO extends DurableObject<Env> {
     interface CandidateMatchOption {
       otherId: string;
       other: QueueEntry;
-      validCampusId: string;
       distance: number;
       lastMatchedTime: number | null;
     }
@@ -277,22 +241,7 @@ export class CampusMatcherDO extends DurableObject<Env> {
         continue;
       }
 
-      // 2. Mutual campus or open proximity matching
-      const sharedCampuses = candidateEntry.user.campusIds.filter((cid) =>
-        other.user.campusIds.includes(cid)
-      );
-
-      // Determine appropriate campus scope badge
-      const validCampusId =
-        sharedCampuses.length > 0
-          ? sharedCampuses[0]
-          : candidateEntry.user.campusIds.length > 0
-          ? candidateEntry.user.campusIds[0]
-          : other.user.campusIds.length > 0
-          ? other.user.campusIds[0]
-          : "nearby";
-
-      // 3. Proximity calculation (Haversine formula)
+      // 2. Proximity calculation (Haversine formula)
       const distance = haversineDistanceMeters(
         candidateEntry.user.lat,
         candidateEntry.user.lng,
@@ -320,7 +269,6 @@ export class CampusMatcherDO extends DurableObject<Env> {
       eligibleMatches.push({
         otherId,
         other,
-        validCampusId,
         distance,
         lastMatchedTime,
       });
@@ -365,7 +313,6 @@ export class CampusMatcherDO extends DurableObject<Env> {
     const matchPayloadA = JSON.stringify({
       type: "match_found",
       matchId,
-      campusId: best.validCampusId,
       distanceMeters: Math.round(best.distance),
       partner: {
         userId: best.other.user.userId,
@@ -376,7 +323,6 @@ export class CampusMatcherDO extends DurableObject<Env> {
     const matchPayloadB = JSON.stringify({
       type: "match_found",
       matchId,
-      campusId: best.validCampusId,
       distanceMeters: Math.round(best.distance),
       partner: {
         userId: candidateEntry.user.userId,

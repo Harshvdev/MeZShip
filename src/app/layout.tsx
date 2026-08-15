@@ -2,9 +2,9 @@ import type { Metadata, Viewport } from "next";
 import "@/styles/globals.css";
 
 export const metadata: Metadata = {
-  title: "MeZShip — Spontaneous Campus 1-to-1 Random Chat",
+  title: "MeZShip — Distance-Based 1-to-1 Random Chat",
   description:
-    "A local random-chat platform for spontaneous 1-to-1 conversations with people who are currently inside selected campuses.",
+    "A local random-chat platform for spontaneous 1-to-1 conversations with people nearby based on distance proximity.",
   icons: {
     icon: [
       { url: "/favicon.ico", sizes: "any" },

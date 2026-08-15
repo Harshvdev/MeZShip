@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from "react";
 import { X, Dices, Check, UserX, Trash2 } from "lucide-react";
-import { CampusSelector, type CampusOption } from "@/components/matching/CampusSelector";
 import { getApiUrl } from "@/lib/api";
 
 interface BlockedUser {
@@ -18,9 +17,6 @@ interface SettingsModalProps {
   onClose: () => void;
   currentDisplayName: string;
   onUpdateDisplayName: (name: string) => Promise<boolean>;
-  campuses: CampusOption[];
-  selectedCampusIds: string[];
-  onUpdateCampuses: (ids: string[]) => void;
   token: string | null;
 }
 
@@ -29,16 +25,13 @@ export function SettingsModal({
   onClose,
   currentDisplayName,
   onUpdateDisplayName,
-  campuses,
-  selectedCampusIds,
-  onUpdateCampuses,
   token,
 }: SettingsModalProps) {
   const [displayName, setDisplayName] = useState(currentDisplayName);
   const [isSavingName, setIsSavingName] = useState(false);
   const [nameSaved, setNameSaved] = useState(false);
   const [blockedUsers, setBlockedUsers] = useState<BlockedUser[]>([]);
-  const [activeTab, setActiveTab] = useState<"profile" | "campuses" | "blocks">("profile");
+  const [activeTab, setActiveTab] = useState<"profile" | "blocks">("profile");
 
   useEffect(() => {
     setDisplayName(currentDisplayName);
@@ -126,27 +119,17 @@ export function SettingsModal({
             onClick={() => setActiveTab("profile")}
             className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
               activeTab === "profile"
-                ? "bg-indigo-600 text-white"
+                ? "bg-teal-500 text-gray-950 font-bold"
                 : "text-gray-400 hover:text-gray-200"
             }`}
           >
             Display Name
           </button>
           <button
-            onClick={() => setActiveTab("campuses")}
-            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-              activeTab === "campuses"
-                ? "bg-indigo-600 text-white"
-                : "text-gray-400 hover:text-gray-200"
-            }`}
-          >
-            Campus Preferences
-          </button>
-          <button
             onClick={() => setActiveTab("blocks")}
             className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
               activeTab === "blocks"
-                ? "bg-indigo-600 text-white"
+                ? "bg-teal-500 text-gray-950 font-bold"
                 : "text-gray-400 hover:text-gray-200"
             }`}
           >
@@ -168,7 +151,7 @@ export function SettingsModal({
                     value={displayName}
                     onChange={(e) => setDisplayName(e.target.value)}
                     maxLength={30}
-                    className="flex-1 px-3.5 py-2.5 rounded-xl bg-black/40 border border-white/10 focus:border-indigo-500 focus:outline-none text-sm text-white transition-colors"
+                    className="flex-1 px-3.5 py-2.5 rounded-xl bg-black/40 border border-white/10 focus:border-teal-400 focus:outline-none text-sm text-white transition-colors"
                   />
                   <button
                     type="button"
@@ -180,34 +163,24 @@ export function SettingsModal({
                   </button>
                 </div>
                 <p className="text-[11px] text-gray-500 mt-1.5">
-                  This is the public identity shown to other campus users during chats.
+                  This is the public identity shown to other users during chats.
                 </p>
               </div>
 
               <div className="flex items-center justify-between pt-2">
-                <span className="text-xs text-emerald-400">
+                <span className="text-xs text-teal-400 font-medium">
                   {nameSaved && "Display name updated!"}
                 </span>
                 <button
                   type="submit"
                   disabled={isSavingName || !displayName.trim()}
-                  className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-medium text-xs transition-colors shadow-md shadow-indigo-600/30 disabled:opacity-50"
+                  className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-teal-500 hover:bg-teal-400 text-gray-950 font-bold text-xs transition-colors shadow-md shadow-teal-500/20 disabled:opacity-50"
                 >
                   <Check className="w-3.5 h-3.5" />
                   <span>{isSavingName ? "Saving..." : "Save Changes"}</span>
                 </button>
               </div>
             </form>
-          )}
-
-          {activeTab === "campuses" && (
-            <div className="space-y-4">
-              <CampusSelector
-                campuses={campuses}
-                selectedIds={selectedCampusIds}
-                onChange={onUpdateCampuses}
-              />
-            </div>
           )}
 
           {activeTab === "blocks" && (

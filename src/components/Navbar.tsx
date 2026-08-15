@@ -3,12 +3,13 @@
 import { useState, useRef, useEffect } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { Settings, LogOut, Clock, ChevronDown, User } from "lucide-react";
+import { Settings, LogOut, Clock, ChevronDown, User, MapPin } from "lucide-react";
 import type { UserProfile } from "@/hooks/useAuth";
 
 interface NavbarProps {
   profile: UserProfile | null;
   onOpenSettings: () => void;
+  onOpenLocation?: () => void;
   onOpenLogs?: () => void;
   onSignOut: () => void;
   onlineCount?: number;
@@ -17,6 +18,7 @@ interface NavbarProps {
 export function Navbar({
   profile,
   onOpenSettings,
+  onOpenLocation,
   onOpenLogs,
   onSignOut,
   onlineCount = 0,
@@ -61,7 +63,7 @@ export function Navbar({
         <div className="flex items-center gap-2.5">
           {/* Live Online Badge */}
           <div
-            title="Active campus users online right now"
+            title="Active users online right now"
             className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-xs text-emerald-400 font-medium"
           >
             <span className="relative flex h-2 w-2">
@@ -105,6 +107,19 @@ export function Navbar({
                     </div>
                   </div>
 
+                  {onOpenLocation && (
+                    <button
+                      onClick={() => {
+                        setShowMenu(false);
+                        onOpenLocation();
+                      }}
+                      className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-left text-xs font-medium text-gray-300 hover:text-white hover:bg-white/10 transition-colors"
+                    >
+                      <MapPin className="w-4 h-4 text-teal-400" />
+                      <span>Location & Distance</span>
+                    </button>
+                  )}
+
                   <button
                     onClick={() => {
                       setShowMenu(false);
@@ -112,8 +127,8 @@ export function Navbar({
                     }}
                     className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-left text-xs font-medium text-gray-300 hover:text-white hover:bg-white/10 transition-colors"
                   >
-                    <Settings className="w-4 h-4 text-indigo-400" />
-                    <span>Settings & Campuses</span>
+                    <Settings className="w-4 h-4 text-teal-400" />
+                    <span>Account Settings</span>
                   </button>
 
                   {onOpenLogs && (
