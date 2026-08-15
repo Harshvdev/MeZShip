@@ -59,7 +59,7 @@ export function useGeolocation() {
         console.warn("Geolocation permission error/denied:", error.message);
         setLocation((prev) => ({
           ...prev,
-          error: "Location access denied or unavailable. You can search or select your campus to calibrate your location.",
+          error: "Location access denied or unavailable. You can set custom coordinates in Location Settings.",
           loading: false,
         }));
       },
@@ -73,10 +73,11 @@ export function useGeolocation() {
 
   const setCalibratedLocation = useCallback(
     (lat: number, lng: number, locationName?: string) => {
+      const cleanName = locationName || "Calibrated Location";
       const payload = {
         lat,
         lng,
-        locationName: locationName || "Calibrated Location",
+        locationName: cleanName,
         timestamp: Date.now(),
       };
       if (typeof window !== "undefined") {
@@ -94,7 +95,7 @@ export function useGeolocation() {
         error: null,
         loading: false,
         isCalibrated: true,
-        locationName: locationName || "Calibrated Location",
+        locationName: cleanName,
       });
     },
     []
@@ -120,6 +121,18 @@ export function useGeolocation() {
       if (saved) {
         const parsed = JSON.parse(saved);
         if (parsed.lat && parsed.lng) {
+          // Clean legacy campus / college names if present in localStorage
+          let cleanName = parsed.locationName || "Calibrated Location";
+          if (
+            typeof cleanName === "string" &&
+            (cleanName.toLowerCase().includes("campus") ||
+              cleanName.toLowerCase().includes("institute") ||
+              cleanName.toLowerCase().includes("college") ||
+              cleanName.toLowerCase().includes("university"))
+          ) {
+            cleanName = "Calibrated Location";
+          }
+
           setLocation({
             lat: parsed.lat,
             lng: parsed.lng,
@@ -127,7 +140,7 @@ export function useGeolocation() {
             error: null,
             loading: false,
             isCalibrated: true,
-            locationName: parsed.locationName || "Calibrated Campus Location",
+            locationName: cleanName,
           });
           return;
         }

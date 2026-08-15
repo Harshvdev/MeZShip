@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { X, Clock, ShieldAlert, Ban, Check, Trash2, School, MessageSquare } from "lucide-react";
+import { X, Clock, ShieldAlert, Ban, Check, Trash2, MapPin, MessageSquare } from "lucide-react";
 import { getMatchLogs, clearMatchLogs, type MatchLogEntry } from "@/lib/matchLogs";
 
 interface MatchLogsModalProps {
@@ -108,9 +108,9 @@ export function MatchLogsModal({
                         </span>
                       </div>
                       <div className="flex items-center gap-2 text-xs text-gray-400 mt-0.5">
-                        <span className="truncate flex items-center gap-1">
-                          <School className="w-3 h-3 text-indigo-400 shrink-0" />
-                          <span>{log.campusId}</span>
+                        <span className="truncate flex items-center gap-1 text-teal-400/80">
+                          <MapPin className="w-3 h-3 text-teal-400 shrink-0" />
+                          <span>Distance Proximity Match</span>
                         </span>
                       </div>
                     </div>

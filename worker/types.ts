@@ -26,9 +26,9 @@ export interface WaitingUser {
   displayName: string;
   lat: number;
   lng: number;
-  campusIds: string[];
   maxRadiusMeters: number;
   queuedAt: number;
+  campusIds?: string[];
 }
 
 export interface GeoJSONPolygon {
