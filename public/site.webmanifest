@@ -1,11 +1,11 @@
 {
-  "name": "MeZShip",
+  "name": "MeZShip — Anonymous Proximity Chat",
   "short_name": "MeZShip",
   "description": "A local random-chat platform for spontaneous 1-to-1 conversations with people nearby based on distance proximity.",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#090a0f",
-  "theme_color": "#090a0f",
+  "background_color": "#0A0F0D",
+  "theme_color": "#0A0F0D",
   "icons": [
     {
       "src": "/favicon-16x16.png",

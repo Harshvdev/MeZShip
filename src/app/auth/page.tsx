@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Mail, Shield, ArrowRight, Loader2, Radio } from "lucide-react";
 import Link from "next/link";
+import { Logo } from "@/components/common/Logo";
 
 export default function AuthPage() {
   const [email, setEmail] = useState("");
@@ -65,8 +66,8 @@ export default function AuthPage() {
       <div className="w-full max-w-md p-6 sm:p-8 rounded-2xl bg-surface border border-line shadow-2xl animate-fade-in relative">
         <div className="flex flex-col items-center text-center mb-6">
           <Link href="/" className="inline-flex items-center gap-2 mb-3 group">
-            <div className="w-10 h-10 rounded-xl bg-surface-raised border border-signal/40 flex items-center justify-center text-signal group-hover:border-signal transition-colors shadow-sm">
-              <span className="font-mono text-sm font-bold tracking-tighter">MZ</span>
+            <div className="w-12 h-12 rounded-xl bg-surface-raised border border-signal/40 flex items-center justify-center text-signal group-hover:border-signal group-hover:shadow-[0_0_16px_rgba(47,228,141,0.3)] transition-all shadow-sm">
+              <Logo size={32} withGlow className="group-hover:scale-105 transition-transform" />
             </div>
           </Link>
           <h2 className="font-display text-xl sm:text-2xl font-bold text-paper tracking-tight">

@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from "react";
 import Link from "next/link";
 import { Settings, LogOut, Clock, MapPin, SlidersHorizontal } from "lucide-react";
 import type { UserProfile } from "@/hooks/useAuth";
+import { Logo } from "@/components/common/Logo";
 
 interface NavbarProps {
   profile: UserProfile | null;
@@ -43,10 +44,10 @@ export function Navbar({
       <div className="max-w-7xl mx-auto px-3.5 sm:px-6 h-13 sm:h-14 flex items-center justify-between">
         {/* Brand & Live Mono Count */}
         <div className="flex items-center gap-3 sm:gap-6">
-          <Link href="/" className="flex items-center gap-2 group shrink-0">
-            {/* Instrument Signal Receiver Logo Glyph */}
-            <div className="w-7 h-7 rounded-lg bg-surface border border-signal/30 flex items-center justify-center text-signal group-hover:border-signal transition-colors shadow-sm">
-              <span className="font-mono text-xs font-bold tracking-tighter">MZ</span>
+          <Link href="/" className="flex items-center gap-2.5 group shrink-0">
+            {/* Radar Signal Logo */}
+            <div className="w-8 h-8 rounded-lg bg-surface border border-signal/30 flex items-center justify-center text-signal group-hover:border-signal group-hover:shadow-[0_0_12px_rgba(47,228,141,0.25)] transition-all shadow-sm">
+              <Logo size={22} className="group-hover:scale-105 transition-transform" />
             </div>
             <div className="flex flex-col">
               <span className="font-display text-base sm:text-lg font-bold tracking-tight text-paper group-hover:text-signal transition-colors leading-tight">
