@@ -33,21 +33,10 @@ const BADGES = [
 export function TrustBadges({ variant = "desktop" }: TrustBadgesProps) {
   if (variant === "mobile") {
     return (
-      <div className="grid grid-cols-3 gap-1.5 w-full">
-        {BADGES.map((b) => {
-          const Icon = b.icon;
-          return (
-            <div
-              key={b.id}
-              className="cert-badge rounded-lg px-2 py-2 flex flex-col items-center text-center gap-1 border border-line bg-surface/80"
-            >
-              <Icon className="w-4 h-4 text-signal shrink-0" />
-              <span className="text-[11px] font-medium text-paper leading-tight">
-                {b.title}
-              </span>
-            </div>
-          );
-        })}
+      <div className="flex items-center justify-center w-full">
+        <span className="font-mono text-[10px] font-semibold tracking-wider text-signal bg-signal/10 border border-signal/20 px-3 py-1 rounded-full text-center">
+          LOCAL · NO LOGS · LIVE
+        </span>
       </div>
     );
   }

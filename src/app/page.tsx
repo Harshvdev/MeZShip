@@ -218,105 +218,190 @@ export default function Home() {
             />
           </div>
         ) : (
-          /* DESKTOP SPLIT SCREEN + MOBILE SINGLE COLUMN (STRICTLY NO WHOLE-PAGE SCROLL) */
-          <div className="flex-1 min-h-0 w-full grid grid-cols-1 lg:grid-cols-12 gap-2 sm:gap-4 lg:gap-8 items-center overflow-hidden">
-            {/* MOBILE ONLY: Hero Radar Dial at top */}
-            <div className="lg:hidden flex-1 min-h-0 flex flex-col items-center justify-center py-1 overflow-hidden">
-              <RadarDial
-                radiusKm={radiusKm}
-                onRadiusChange={handleRadiusChange}
-                state={chatState}
-                onStartMatching={handleStartChat}
-                partnerDistanceMeters={partner?.distanceMeters}
-                partnerDisplayName={partner?.displayName}
-                isCalibrated={isCalibrated}
-              />
-            </div>
-
-            {/* LEFT COLUMN (~40% on Desktop): Brand thesis, headline, trust tags, CTA */}
-            <div className="lg:col-span-5 flex flex-col justify-center gap-2.5 sm:gap-5 order-2 lg:order-1 px-1 shrink-0 lg:shrink">
-              {/* Eyebrow & Headline */}
-              <div className="space-y-1 sm:space-y-1.5">
-                <div className="flex items-center gap-2">
-                  <span className="font-mono text-[9px] sm:text-xs font-semibold tracking-wider text-signal bg-signal/10 border border-signal/20 px-2 py-0.5 rounded">
-                    PSEUDONYMOUS · LOCAL · LIVE
+          /* UNIFIED MATCHING VIEW */
+          <div className="flex-1 min-h-0 w-full flex flex-col overflow-hidden">
+            {/* MOBILE LAYOUT (<lg) */}
+            <div className="lg:hidden flex-1 min-h-0 w-full max-w-sm mx-auto flex flex-col justify-between items-center py-2 px-1 gap-2 overflow-hidden">
+              {isSearching ? (
+                /* Mobile Active Searching Screen */
+                <div className="flex-1 min-h-0 w-full flex flex-col items-center justify-between py-2 animate-fade-in">
+                  <span className="font-mono text-[10px] uppercase tracking-widest text-signal bg-signal/10 border border-signal/20 px-3 py-1 rounded-full shrink-0">
+                    SIGNAL SEARCH ACTIVE
                   </span>
-                </div>
-                <h1 className="font-display text-lg sm:text-2xl lg:text-4xl font-bold tracking-tight text-paper leading-tight">
-                  There&apos;s always someone nearby.
-                </h1>
-                <p className="text-[11px] sm:text-xs lg:text-sm text-ash leading-relaxed font-body line-clamp-2 sm:line-clamp-none">
-                  Connect spontaneously with people within your radius. Random callsigns, zero public profiles, and zero chat logs.
-                </p>
-              </div>
 
-              {/* Trust Badges - Equipment Certification Tags */}
-              <div className="w-full">
-                <div className="hidden sm:block">
-                  <TrustBadges variant="desktop" />
-                </div>
-                <div className="sm:hidden">
-                  <TrustBadges variant="mobile" />
-                </div>
-              </div>
+                  {/* Centered Hero Radar */}
+                  <div className="flex-1 min-h-0 flex items-center justify-center my-auto">
+                    <RadarDial
+                      radiusKm={radiusKm}
+                      onRadiusChange={handleRadiusChange}
+                      state={chatState}
+                      onStartMatching={handleStartChat}
+                      partnerDistanceMeters={partner?.distanceMeters}
+                      partnerDisplayName={partner?.displayName}
+                      isCalibrated={isCalibrated}
+                    />
+                  </div>
 
-              {/* Push-to-Talk CTA Button */}
-              <div className="pt-0.5 sm:pt-1">
-                {isSearching ? (
-                  <button
-                    type="button"
-                    onClick={leave}
-                    className="w-full py-3 px-4 rounded-xl border border-line bg-surface hover:bg-surface-raised text-paper font-display font-semibold text-xs sm:text-sm transition-all flex items-center justify-center gap-2 shadow-sm"
-                  >
-                    <span className="w-2 h-2 rounded-full bg-signal animate-ping" />
-                    <span>Searching ({radiusKm} km) · Cancel [Esc]</span>
-                  </button>
-                ) : chatState === "PARTNER_SKIPPED" ? (
-                  <div className="flex items-center gap-2 w-full">
+                  {/* Cancel Button at bottom */}
+                  <div className="w-full shrink-0 pt-2">
                     <button
                       type="button"
                       onClick={leave}
-                      className="px-3.5 py-3 rounded-xl border border-line bg-surface hover:bg-surface-raised text-ash hover:text-paper font-display text-xs transition-colors"
+                      className="w-full py-3.5 px-4 rounded-xl border border-line-bright bg-surface-raised hover:bg-surface text-paper font-display font-semibold text-sm transition-all flex items-center justify-center gap-2 shadow-lg active:scale-[0.98]"
                     >
-                      <LogOut className="w-4 h-4" />
+                      <span className="w-2 h-2 rounded-full bg-signal animate-ping" />
+                      <span>Searching ({radiusKm} km) · Cancel [Esc]</span>
                     </button>
+                  </div>
+                </div>
+              ) : (
+                /* Mobile Idle / Skipped Screen */
+                <div className="flex-1 min-h-0 w-full flex flex-col justify-between items-center gap-2">
+                  {/* Top Compact Headline */}
+                  <div className="flex flex-col items-center text-center space-y-1 shrink-0 pt-2">
+                    <h1 className="font-display text-lg sm:text-xl font-bold tracking-tight text-paper leading-tight">
+                      There&apos;s always someone nearby.
+                    </h1>
+                    <p className="text-[11px] text-ash max-w-xs leading-tight font-body">
+                      Spontaneous distance chat. Zero profiles, zero logs.
+                    </p>
+                  </div>
+
+                  {/* Center Radar Dial */}
+                  <div className="flex-1 min-h-0 flex items-center justify-center py-1">
+                    <RadarDial
+                      radiusKm={radiusKm}
+                      onRadiusChange={handleRadiusChange}
+                      state={chatState}
+                      onStartMatching={handleStartChat}
+                      partnerDistanceMeters={partner?.distanceMeters}
+                      partnerDisplayName={partner?.displayName}
+                      isCalibrated={isCalibrated}
+                    />
+                  </div>
+
+                  {/* Bottom Trust Pills + Primary CTA */}
+                  <div className="w-full flex flex-col gap-2 shrink-0 pb-1">
+                    <TrustBadges variant="mobile" />
+
+                    {chatState === "PARTNER_SKIPPED" ? (
+                      <div className="flex items-center gap-2 w-full">
+                        <button
+                          type="button"
+                          onClick={leave}
+                          className="px-3.5 py-3.5 rounded-xl border border-line bg-surface hover:bg-surface-raised text-ash hover:text-paper font-display text-xs transition-colors"
+                        >
+                          <LogOut className="w-4 h-4" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleStartChat}
+                          className="btn-ptt flex-1 py-3.5 px-4 rounded-xl font-display font-bold text-sm tracking-wide flex items-center justify-center gap-2 shadow-lg"
+                        >
+                          <RotateCcw className="w-4 h-4" />
+                          <span>Match Next Peer ({radiusKm} km)</span>
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={handleStartChat}
+                        className="btn-ptt w-full py-3.5 px-5 rounded-xl font-display font-bold text-sm tracking-wide flex items-center justify-center gap-2 shadow-xl select-none active:scale-[0.98]"
+                      >
+                        <Radio className="w-4 h-4" />
+                        <span>Start Matching</span>
+                        <span className="font-mono text-xs opacity-75 font-normal ml-1">
+                          [{radiusKm} km]
+                        </span>
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* DESKTOP VIEW (>= lg) */}
+            <div className="hidden lg:grid lg:grid-cols-12 gap-8 items-center flex-1 min-h-0 w-full overflow-hidden">
+              {/* LEFT COLUMN (~40% on Desktop): Brand thesis, headline, trust tags, CTA */}
+              <div className="lg:col-span-5 flex flex-col justify-center gap-5 px-1">
+                {/* Eyebrow & Headline */}
+                <div className="space-y-1.5">
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono text-xs font-semibold tracking-wider text-signal bg-signal/10 border border-signal/20 px-2.5 py-0.5 rounded">
+                      LOCAL · NO LOGS · LIVE
+                    </span>
+                  </div>
+                  <h1 className="font-display text-2xl lg:text-4xl font-bold tracking-tight text-paper leading-tight">
+                    There&apos;s always someone nearby.
+                  </h1>
+                  <p className="text-xs lg:text-sm text-ash leading-relaxed font-body">
+                    Connect spontaneously with people within your radius. Random callsigns, zero public profiles, and zero chat logs.
+                  </p>
+                </div>
+
+                {/* Trust Badges - Equipment Certification Tags */}
+                <div className="w-full">
+                  <TrustBadges variant="desktop" />
+                </div>
+
+                {/* Push-to-Talk CTA Button */}
+                <div className="pt-1">
+                  {isSearching ? (
+                    <button
+                      type="button"
+                      onClick={leave}
+                      className="w-full py-3.5 px-4 rounded-xl border border-line bg-surface hover:bg-surface-raised text-paper font-display font-semibold text-sm transition-all flex items-center justify-center gap-2 shadow-sm"
+                    >
+                      <span className="w-2 h-2 rounded-full bg-signal animate-ping" />
+                      <span>Searching ({radiusKm} km) · Cancel [Esc]</span>
+                    </button>
+                  ) : chatState === "PARTNER_SKIPPED" ? (
+                    <div className="flex items-center gap-2 w-full">
+                      <button
+                        type="button"
+                        onClick={leave}
+                        className="px-3.5 py-3 rounded-xl border border-line bg-surface hover:bg-surface-raised text-ash hover:text-paper font-display text-xs transition-colors"
+                      >
+                        <LogOut className="w-4 h-4" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleStartChat}
+                        className="btn-ptt flex-1 py-3 px-4 rounded-xl font-display font-bold text-sm tracking-wide flex items-center justify-center gap-2 shadow-lg"
+                      >
+                        <RotateCcw className="w-4 h-4" />
+                        <span>Match Next Peer ({radiusKm} km)</span>
+                      </button>
+                    </div>
+                  ) : (
                     <button
                       type="button"
                       onClick={handleStartChat}
-                      className="btn-ptt flex-1 py-3 px-4 rounded-xl font-display font-bold text-xs sm:text-sm tracking-wide flex items-center justify-center gap-2 shadow-lg"
+                      className="btn-ptt w-full py-3.5 px-5 rounded-xl font-display font-bold text-base tracking-wide flex items-center justify-center gap-2 shadow-xl select-none"
                     >
-                      <RotateCcw className="w-4 h-4" />
-                      <span>Match Next Peer ({radiusKm} km)</span>
+                      <Radio className="w-4 h-4" />
+                      <span>Start Matching</span>
+                      <span className="font-mono text-xs opacity-75 font-normal ml-1">
+                        [{radiusKm} km]
+                      </span>
                     </button>
-                  </div>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={handleStartChat}
-                    className="btn-ptt w-full py-3 sm:py-3.5 px-5 rounded-xl font-display font-bold text-xs sm:text-base tracking-wide flex items-center justify-center gap-2 shadow-xl select-none"
-                  >
-                    <Radio className="w-4 h-4" />
-                    <span>Start Matching</span>
-                    <span className="font-mono text-xs opacity-75 font-normal ml-1">
-                      [{radiusKm} km]
-                    </span>
-                  </button>
-                )}
+                  )}
+                </div>
               </div>
-            </div>
 
-            {/* RIGHT COLUMN (~60% on Desktop): Signature Radar Dial */}
-            <div className="hidden lg:col-span-7 lg:flex flex-col items-center justify-center order-1 lg:order-2 p-2">
-              <div className="w-full max-w-[480px] p-6 rounded-2xl bg-surface/40 border border-line/60 flex flex-col items-center justify-center shadow-2xl relative">
-                <RadarDial
-                  radiusKm={radiusKm}
-                  onRadiusChange={handleRadiusChange}
-                  state={chatState}
-                  onStartMatching={handleStartChat}
-                  partnerDistanceMeters={partner?.distanceMeters}
-                  partnerDisplayName={partner?.displayName}
-                  isCalibrated={isCalibrated}
-                />
+              {/* RIGHT COLUMN (~60% on Desktop): Signature Radar Dial */}
+              <div className="lg:col-span-7 flex flex-col items-center justify-center p-2">
+                <div className="w-full max-w-[480px] p-6 rounded-2xl bg-surface/40 border border-line/60 flex flex-col items-center justify-center shadow-2xl relative">
+                  <RadarDial
+                    radiusKm={radiusKm}
+                    onRadiusChange={handleRadiusChange}
+                    state={chatState}
+                    onStartMatching={handleStartChat}
+                    partnerDistanceMeters={partner?.distanceMeters}
+                    partnerDisplayName={partner?.displayName}
+                    isCalibrated={isCalibrated}
+                  />
+                </div>
               </div>
             </div>
           </div>
