@@ -172,7 +172,7 @@ export function RadarDial({
       />
 
       {/* Main Radar Instrument Box */}
-      <div className="relative w-full max-w-[340px] sm:max-w-[400px] aspect-square flex items-center justify-center p-2">
+      <div className="relative w-full max-w-[240px] xs:max-w-[270px] sm:max-w-[340px] lg:max-w-[380px] aspect-square flex items-center justify-center p-1 sm:p-2 shrink-0">
         <svg
           ref={svgRef}
           viewBox="0 0 360 360"
@@ -437,30 +437,26 @@ export function RadarDial({
       </div>
 
       {/* Radar Readout & Status Deck */}
-      <div className="w-full max-w-[280px] sm:max-w-[340px] lg:max-w-[400px] flex flex-col items-center text-center mt-1">
+      <div className="w-full max-w-[280px] sm:max-w-[340px] lg:max-w-[400px] flex flex-col items-center text-center mt-1.5 sm:mt-2">
         {isSearching ? (
           <div className="flex flex-col items-center gap-1.5 animate-fade-in w-full">
-            <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-signal/10 border border-signal/30 text-signal font-mono text-xs font-semibold">
+            <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-signal/10 border border-signal/30 text-signal font-mono text-xs font-semibold shadow-sm">
               <span className="w-2 h-2 rounded-full bg-signal animate-ping" />
               <span>Searching · {mins}:{secs}</span>
             </div>
 
             {/* Quiet empty-state caption after 10 seconds */}
             {searchSeconds >= 10 && (
-              <p className="font-mono text-[11px] sm:text-xs text-ash animate-fade-in">
+              <p className="font-mono text-[11px] sm:text-xs text-ash animate-fade-in px-2">
                 No signal yet — try widening your radius.
               </p>
             )}
           </div>
         ) : (
-          <div className="flex items-center justify-between w-full px-2 py-0.5 border-t border-line/60 mt-0.5">
-            <div className="flex items-center gap-1.5 text-ash text-xs">
-              <MapPin className="w-3.5 h-3.5 text-signal" />
-              <span className="font-sans">Search scope:</span>
-            </div>
-            <div className="flex items-center gap-1.5 font-mono text-xs text-signal font-semibold">
-              <span>{radiusKm} km radius</span>
-            </div>
+          <div className="flex items-center justify-center gap-2 w-full px-3 py-1 rounded-full bg-surface border border-line text-xs font-mono text-ash shadow-sm">
+            <MapPin className="w-3.5 h-3.5 text-signal shrink-0" />
+            <span className="text-paper font-semibold">{radiusKm} km</span>
+            <span className="text-ash/70 text-[11px]">· Drag handle to set scope</span>
           </div>
         )}
       </div>
