@@ -2,9 +2,9 @@ import type { Metadata, Viewport } from "next";
 import "@/styles/globals.css";
 
 export const metadata: Metadata = {
-  title: "MeZShip — Distance-Based 1-to-1 Random Chat",
+  title: "MeZShip — Anonymous Proximity Chat",
   description:
-    "A local random-chat platform for spontaneous 1-to-1 conversations with people nearby based on distance proximity.",
+    "Ephemeral, distance-based 1-to-1 random conversations with people nearby. No profiles. No history. Just a conversation.",
   icons: {
     icon: [
       { url: "/favicon.ico", sizes: "any" },
@@ -26,7 +26,7 @@ export const viewport: Viewport = {
   maximumScale: 1,
   userScalable: false,
   interactiveWidget: "resizes-content",
-  themeColor: "#090a0f",
+  themeColor: "#0A0F0D",
 };
 
 export default function RootLayout({
@@ -36,7 +36,15 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className="dark h-full">
-      <body className="antialiased h-full w-full overflow-hidden flex flex-col bg-[#090a0f] text-gray-100">
+      <head>
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+        <link
+          href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap"
+          rel="stylesheet"
+        />
+      </head>
+      <body className="antialiased h-full w-full overflow-hidden flex flex-col bg-ink text-paper font-body selection:bg-signal/20 selection:text-signal">
         {children}
       </body>
     </html>

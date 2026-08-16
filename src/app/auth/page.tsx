@@ -3,9 +3,9 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { Mail, Shield, ArrowRight, Loader2 } from "lucide-react";
+import { Mail, Shield, ArrowRight, Loader2, Radio } from "lucide-react";
 import Link from "next/link";
-import Image from "next/image";
+import { Logo } from "@/components/common/Logo";
 
 export default function AuthPage() {
   const [email, setEmail] = useState("");
@@ -34,10 +34,10 @@ export default function AuthPage() {
       if (signInError) {
         setError(signInError.message);
       } else {
-        setMessage("Check your email for the magic sign-in link!");
+        setMessage("Constellation link dispatched. Check your email inbox.");
       }
     } catch (err: any) {
-      setError(err?.message || "Failed to send magic link.");
+      setError(err?.message || "Failed to dispatch auth link.");
     } finally {
       setLoading(false);
     }
@@ -62,38 +62,30 @@ export default function AuthPage() {
   };
 
   return (
-    <div className="flex-1 flex flex-col items-center justify-center p-4">
-      {/* Background Glow */}
-      <div className="w-full max-w-md p-8 rounded-3xl glass-panel border border-white/10 shadow-2xl animate-fade-in relative">
-        <div className="flex flex-col items-center text-center mb-8">
-          <Link href="/" className="inline-flex items-center gap-2 mb-4 group">
-            <div className="relative w-12 h-12 rounded-2xl overflow-hidden shadow-lg shadow-indigo-500/25 group-hover:scale-105 transition-transform">
-              <Image
-                src="/logo.png"
-                alt="MeZShip Logo"
-                fill
-                sizes="48px"
-                priority
-                className="object-contain"
-              />
+    <div className="flex-1 flex flex-col items-center justify-center p-4 bg-ink text-paper font-body">
+      <div className="w-full max-w-md p-6 sm:p-8 rounded-2xl bg-surface border border-line shadow-2xl animate-fade-in relative">
+        <div className="flex flex-col items-center text-center mb-6">
+          <Link href="/" className="inline-flex items-center gap-2 mb-3 group">
+            <div className="w-12 h-12 rounded-xl bg-surface-raised border border-signal/40 flex items-center justify-center text-signal group-hover:border-signal group-hover:shadow-[0_0_16px_rgba(47,228,141,0.3)] transition-all shadow-sm">
+              <Logo size={32} withGlow className="group-hover:scale-105 transition-transform" />
             </div>
           </Link>
-          <h2 className="text-2xl font-bold text-white tracking-tight">
-            Sign In to MeZShip
+          <h2 className="font-display text-xl sm:text-2xl font-bold text-paper tracking-tight">
+            Connect Signal Station
           </h2>
-          <p className="text-xs text-gray-400 mt-1 max-w-xs">
-            Spontaneous, pseudonymous 1-to-1 conversations with people on your campus.
+          <p className="font-mono text-xs text-ash mt-1 max-w-xs">
+            ANONYMOUS · LOCAL PROXIMITY · VOLATILE
           </p>
         </div>
 
         {error && (
-          <div className="mb-4 p-3 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-300 text-xs">
+          <div className="mb-4 p-3 rounded-lg bg-alert/10 border border-alert/20 text-alert text-xs font-mono">
             {error}
           </div>
         )}
 
         {message && (
-          <div className="mb-4 p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 text-xs">
+          <div className="mb-4 p-3 rounded-lg bg-signal/10 border border-signal/20 text-signal text-xs font-mono">
             {message}
           </div>
         )}
@@ -102,7 +94,7 @@ export default function AuthPage() {
         <button
           onClick={handleGoogleAuth}
           disabled={loading}
-          className="w-full flex items-center justify-center gap-3 py-3 px-4 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-white font-medium text-sm transition-all mb-6 disabled:opacity-50"
+          className="w-full flex items-center justify-center gap-3 py-2.5 px-4 rounded-xl bg-surface-raised hover:bg-surface border border-line hover:border-line-bright text-paper font-medium text-xs sm:text-sm transition-all mb-4 disabled:opacity-50"
         >
           <svg className="w-4 h-4" viewBox="0 0 24 24">
             <path
@@ -125,54 +117,55 @@ export default function AuthPage() {
           <span>Continue with Google</span>
         </button>
 
-        <div className="flex items-center gap-3 my-4">
-          <div className="flex-1 h-px bg-white/10" />
-          <span className="text-[11px] text-gray-500 uppercase tracking-wider">
-            or continue with email
+        <div className="flex items-center gap-3 my-3">
+          <div className="flex-1 h-px bg-line" />
+          <span className="font-mono text-[10px] text-ash uppercase tracking-wider">
+            or single-use link
           </span>
-          <div className="flex-1 h-px bg-white/10" />
+          <div className="flex-1 h-px bg-line" />
         </div>
 
         {/* Email Magic Link Form */}
         <form onSubmit={handleEmailAuth} className="space-y-3">
           <div>
-            <label className="block text-xs font-medium text-gray-300 mb-1">
-              Email Address
+            <label className="block font-mono text-[11px] text-ash mb-1">
+              CAMPUS / PERSONAL EMAIL
             </label>
             <div className="relative">
               <input
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="your.email@campus.edu"
+                placeholder="identity@campus.edu"
                 required
-                className="w-full pl-9 pr-4 py-2.5 rounded-xl bg-black/40 border border-white/10 focus:border-indigo-500 focus:outline-none text-sm text-white placeholder-gray-500 transition-colors"
+                className="w-full pl-9 pr-4 py-2 rounded-lg bg-surface-raised border border-line focus:border-signal focus:outline-none text-xs sm:text-sm text-paper placeholder-ash/50 transition-colors font-mono"
               />
-              <Mail className="w-4 h-4 text-gray-500 absolute left-3 top-3" />
+              <Mail className="w-4 h-4 text-ash absolute left-3 top-2.5" />
             </div>
           </div>
 
           <button
             type="submit"
             disabled={loading || !email.trim()}
-            className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-medium text-sm transition-all shadow-lg shadow-indigo-600/30 disabled:opacity-50"
+            className="btn-ptt w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg font-display font-bold text-xs sm:text-sm shadow-md disabled:opacity-50"
           >
             {loading ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
+              <Loader2 className="w-4 h-4 animate-spin text-ink" />
             ) : (
               <>
-                <span>Send Magic Link</span>
+                <span>Send Signal Key</span>
                 <ArrowRight className="w-4 h-4" />
               </>
             )}
           </button>
         </form>
 
-        <div className="mt-8 pt-4 border-t border-white/10 flex items-center justify-center gap-2 text-[11px] text-gray-500">
-          <Shield className="w-3.5 h-3.5" />
-          <span>Pseudonymous Public Identity • No Chat Logs Retained</span>
+        <div className="mt-6 pt-3 border-t border-line flex items-center justify-center gap-2 font-mono text-[10px] text-ash">
+          <Shield className="w-3.5 h-3.5 text-signal" />
+          <span>Pseudonymous Identity · Volatile RAM Protocol</span>
         </div>
       </div>
     </div>
   );
 }
+
