@@ -2,7 +2,7 @@
 
 ## 1. Product
 
-A local random-chat website for spontaneous 1-to-1 conversations with people who are currently inside selected campuses.
+A local random-chat website for spontaneous 1-to-1 conversations with people nearby based on distance proximity.
 
 Core interaction:
 
@@ -11,9 +11,9 @@ Open website
     ↓
 Sign up / Sign in
     ↓
-Grant location access
+Grant location access (or calibrate location)
     ↓
-Select campus(es) where you want to find people
+Configure search radius (default: 5 km)
     ↓
 Start chatting
     ↓
@@ -31,7 +31,7 @@ The service is designed around:
 * account-based access
 * pseudonymous public identities
 * proximity-based random matching
-* campus-scoped discovery
+* configurable distance radius (1–50 km, default 5 km)
 * temporary chat sessions
 * no public social graph
 * no normal chat history
@@ -51,9 +51,9 @@ The MVP includes:
 * randomly generated display names
 * editable display names in settings
 * profile settings
-* campus selection
-* browser/device geolocation
-* campus-only matching
+* browser/device geolocation with manual coordinate calibration
+* distance-based proximity matching
+* interactive search radius slider (1–50 km, default 5 km) with quick presets
 * temporary 1-to-1 conversations
 * skip
 * block
@@ -72,7 +72,8 @@ The MVP does not include:
 * friends
 * likes
 * public posts
-* public user discovery outside selected campuses
+* college/campus-restricted geofencing
+* public user discovery outside configured distance radius
 * voice chat
 * video chat
 * file sharing
@@ -107,8 +108,8 @@ Persistent storage is reserved for information the application actually needs to
 
 Normal operation uses temporary state for:
 
-* precise current location
-* active matching session
+* precise current location (latitude, longitude)
+* active matching session and radius preference
 * active match
 * WebSocket connections
 * normal messages
@@ -119,8 +120,6 @@ Persistent storage contains:
 
 * authenticated user records
 * display-name/profile settings
-* campus configuration
-* user-selected campus preferences
 * block relationships
 * reports and report counters
 * active ban state
@@ -137,37 +136,37 @@ The application is hosted remotely.
 Nothing required for production operation runs on the developer's personal computer.
 
 ```text
-                               INTERNET
-                                   │
-                                   ▼
-                        ┌─────────────────────┐
-                        │   Cloudflare Worker │
-                        │                     │
-                        │ HTTP/API            │
-                        │ Validation          │
-                        │ Auth verification   │
-                        │ Session handling    │
-                        │ Rate limiting       │
-                        │ WebSocket routing   │
-                        └──────────┬──────────┘
-                                   │
-                     ┌─────────────┴─────────────┐
-                     │                           │
-                     ▼                           ▼
-            ┌─────────────────┐        ┌─────────────────────┐
-            │ Durable Objects │        │ Supabase             │
-            │                 │        │                     │
-            │ CampusMatcherDO │        │ Auth                │
-            │  (Queues/Match) │        │ Managed PostgreSQL   │
-            │        ↓        │        │ Persistent data     │
-            │ MatchRoomDO     │        └─────────────────────┘
-            │  (Active Chat)  │
-            └────────┬────────┘
-                     │
-                 WebSockets
-                  ┌──┴──┐
-                  │     │
-                User A User B
+                                INTERNET
+                                    │
+                                    ▼
+                         ┌─────────────────────┐
+                         │   Cloudflare Worker │
+                         │                     │
+                         │ HTTP/API            │
+                         │ Validation          │
+                         │ Auth verification   │
+                         │ Session handling    │
+                         │ Rate limiting       │
+                         │ WebSocket routing   │
+                         └──────────┬──────────┘
+                                    │
+                      ┌─────────────┴─────────────┐
+                      │                           │
+                      ▼                           ▼
+             ┌─────────────────┐        ┌─────────────────────┐
+             │ Durable Objects │        │ Supabase             │
+             │                 │        │                     │
+             │ CampusMatcherDO │        │ Auth                │
+             │  (Queues/Match) │        │ Managed PostgreSQL   │
+             │        ↓        │        │ Persistent data     │
+             │ MatchRoomDO     │        └─────────────────────┘
+             │  (Active Chat)  │
+             └────────┬────────┘
+                      │
+                  WebSockets
+                   ┌──┴──┐
+                   │     │
+                 User A User B
 ```
 
 Supabase provides:
@@ -210,7 +209,6 @@ Responsibilities:
 * location/session initialization
 * WebSocket upgrade routing
 * account/profile requests
-* campus/configuration requests
 * block/unblock requests
 * reporting requests (with context validation)
 * ban checks
@@ -225,10 +223,10 @@ WebSocket Hibernation API
 
 Two-tier architecture:
 
-1. **`CampusMatcherDO`** (per campus/region):
+1. **`CampusMatcherDO`** (Matchmaking queue & proximity engine):
    * waiting queues
-   * campus eligibility validation
-   * in-memory proximity matching within selected campuses
+   * in-memory Haversine distance proximity matching based on user search radius ($\le \min(\text{Radius}_A, \text{Radius}_B)$)
+   * circular fair matching memory and tie-breaking
    * pairing coordination
 
 2. **`MatchRoomDO`** (per active match, keyed by `match_id`):
@@ -308,7 +306,6 @@ Global HTTP rate limiting
 Block and unblock requests
 Context-bound report submissions
 Ban enforcement
-Campus selection preferences
 ```
 
 ### Durable Objects
@@ -317,8 +314,8 @@ Handle:
 
 ```text
 CampusMatcherDO:
-  - Waiting queues per campus
-  - Geospatial eligibility & proximity filtering
+  - Waiting queues
+  - In-memory Haversine distance proximity filtering
   - Match formation & handoff
 
 MatchRoomDO:
@@ -348,8 +345,6 @@ Handles:
 
 ```text
 Users/profile data
-Campus configuration
-Campus selections
 User blocks
 Reports
 Ban state
@@ -419,7 +414,6 @@ The display name:
 * is not the user's real name
 * does not contain an IP address
 * does not contain precise location
-* does not encode the user's campus
 * can be changed by the user
 * is what other users see during a chat
 
@@ -429,7 +423,7 @@ The internal authenticated user ID is never shown to other users.
 
 ## 9. User Profile
 
-The persistent application user profile can be conceptually:
+The persistent application user profile:
 
 ```text
 UserProfile
@@ -441,40 +435,34 @@ UserProfile
 
 Authentication data such as email address and OAuth identity remains managed by Supabase Auth rather than duplicated unnecessarily in the application profile.
 
-The initial MVP profile should remain minimal.
+The initial MVP profile remains minimal.
 
 ---
 
-## 10. Settings
+## 10. Settings & Location Controls
 
-The user can access Settings after signing in.
+The user can access Settings and Location controls from the top navigation dropdown menu after signing in.
 
-At minimum, Settings provides:
-
+### Account Settings Modal
 ```text
-Display name
-Campus preferences
-Blocked users
-Account/sign-out controls
+Display name editing
+Random name generator
+Blocked users list & unblock actions
+Account sign-out
 ```
 
-Display name flow:
-
+### Location & Distance Modal
 ```text
-Default random name
-        ↓
-User opens Settings
-        ↓
-Changes display name
-        ↓
-New name saved
-        ↓
-Future chats use new name
+Matchmaking search radius slider (1–50 km, default 5 km)
+Radius quick preset chips (1 km, 5 km, 10 km, 25 km, 50 km)
+GPS / Network coordinate detection status
+Custom coordinate calibration tool (for desktop/VPN corrections)
+Reset to auto-detected GPS
 ```
 
 ---
 
-## 11. Location Acquisition
+## 11. Location Acquisition & Proximity Model
 
 Proximity is a core product feature.
 
@@ -485,158 +473,65 @@ Conceptually:
 ```text
 User
  ↓
-Browser location permission
+Browser location permission (or calibrated coordinates)
  ↓
-Temporary current coordinates
+Temporary current coordinates (lat, lng) + Max Radius (default 5 km)
  ↓
 Cloudflare Worker / CampusMatcherDO
  ↓
-Campus eligibility check (In-isolate GeoJSON polygon check)
- ↓
 Distance calculation (Haversine formula in-memory)
  ↓
-Matching decision
+Matching decision: distance(A, B) ≤ min(radiusA, radiusB)
 ```
 
-The service should not claim that a website can guarantee a particular physical precision on every device.
+The service does not claim that a website can guarantee a particular physical precision on every device.
 
-Actual accuracy depends on the device, browser, operating system, permissions, and available location sources.
+Actual accuracy depends on the device, browser, operating system, permissions, and available location sources. Users can calibrate custom coordinates in the Location modal if their desktop network reports an inaccurate IP location.
 
 ---
 
-## 12. Campus-Only Location Model
+## 12. Pure Distance-Based Matchmaking
 
-Discovery is campus-scoped rather than city-wide.
+Discovery is purely distance-based.
 
-A user chooses which campus locations they want to discover.
+A user selects their desired matchmaking radius (1–50 km, defaulting to 5 km).
 
-Example:
+Users A and B are eligible to match when:
 
-```text
-My college campus
-Nearby college campus A
-Nearby college campus B
-```
-
-The user's current coordinates are checked against the configured campus boundaries.
-
-A user is eligible for campus-scoped matching only while their current location is inside an eligible campus.
+$$\text{HaversineDistance}(A, B) \le \min(\text{radius}_A, \text{radius}_B)$$
 
 Conceptually:
 
 ```text
-Current coordinates
+User A (latA, lngA, radiusA = 5 km)
+User B (latB, lngB, radiusB = 10 km)
        ↓
-Campus geofence lookup (In-memory Point-in-Polygon)
+HaversineDistance(A, B) = 1.8 km
        ↓
-Inside selected campus?
-   ├── YES → eligible
-   └── NO  → not eligible for that campus
+1.8 km ≤ min(5 km, 10 km) = 5 km → MATCH ELIGIBLE
 ```
 
-The product does not intentionally match users who are merely near a campus but physically outside every selected campus.
+If neither user has coordinates set (e.g. location unavailable on desktop), fallback matching is permitted so users are never permanently blocked from connecting.
 
 ---
 
-## 13. Campus Configuration
+## 13. Radius Selection UI
 
-Campuses are persistent configuration data.
-
-Conceptually:
-
-```text
-Campus
-├── id
-├── name
-├── type
-├── boundary (GeoJSON Polygon)
-├── active
-└── created_at
-```
-
-Possible types:
-
-```text
-COLLEGE
-UNIVERSITY
-CAMPUS
-```
-
-A campus boundary is represented by standard GeoJSON polygon data (`Json` column type in Prisma schema).
-
-Example:
-
-```text
-Campus A
-    └── GeoJSON polygon
-Campus B
-    └── GeoJSON polygon
-```
-
-Active campus boundaries are loaded and cached in Worker / `CampusMatcherDO` memory. Geospatial evaluation (point-in-polygon checks and distance calculations) executes directly within the JavaScript/TypeScript V8 isolate without querying the database per coordinate update.
-
----
-
-## 14. Campus Selection
-
-The user decides where they want to find people.
+The user can adjust their search radius directly from the home screen before starting a chat or via the Location modal.
 
 Example UI:
 
 ```text
-Where do you want to find people?
-
-☑ My College
-☑ Nearby College A
-☐ Nearby College B
+Search Radius: [ 5 km ]
+───●─────────────────── (1 km to 50 km slider)
+[ 1 km ] [ 5 km ] [ 10 km ] [ 25 km ] [ 50 km ]
 ```
 
-The selection is a matching preference.
-
-The selected campus list is persisted so it can be reused.
-
-The user can change it at any time from Settings or before starting a match.
+The selected radius is stored in component state and passed directly to the WebSocket queue on match start.
 
 ---
 
-## 15. Matching Radius Within Campuses
-
-Distance can still be used after campus eligibility is established.
-
-Example:
-
-```text
-A is inside Campus A
-B is inside Campus A
-
-distance(A, B) = 250 m
-```
-
-The matcher can apply a configurable maximum distance.
-
-Possible choices:
-
-```text
-0–500 m
-0–1 km
-0–2 km
-```
-
-The exact values are a product decision.
-
-The important rule is:
-
-```text
-Inside selected campus
-        AND
-Within allowed matching distance
-```
-
-A user outside the selected campus is not matched merely because they are physically nearby.
-
----
-
-## 16. Matching Queue
+## 14. Matching Queue
 
 Users waiting for a match exist in temporary `CampusMatcherDO` state.
 
@@ -645,9 +540,9 @@ Conceptually:
 ```text
 Waiting User
 ├── user_id
-├── temporary current location
-├── selected campus IDs
-├── matching radius
+├── temporary current location (lat, lng)
+├── maxRadiusMeters (default 5000)
+├── enqueuedAt timestamp
 └── temporary session state
 ```
 
@@ -657,30 +552,22 @@ The matcher checks:
 2. Account is not currently banned.
 3. User is connected.
 4. User is currently waiting.
-5. Current location is available.
-6. User is physically inside an eligible selected campus.
-7. Candidate is physically inside a campus both users are allowed to use.
-8. Proximity requirement is satisfied.
-9. Users are not blocking each other.
-10. Neither user is already matched.
+5. Proximity requirement is satisfied: $\text{distance}(A, B) \le \min(\text{radius}_A, \text{radius}_B)$.
+6. Circular fair matching memory check (avoids immediate re-pairing with the same recent partner).
+7. Users are not blocking each other.
+8. Neither user is already matched.
 
 ---
 
-## 17. Pair Matching
+## 15. Pair Matching & Handoff
 
 Example:
 
 ```text
-User A
-current campus = Campus A
+User A (lat: 26.891, lng: 81.071, radius: 5000m)
+User B (lat: 26.893, lng: 81.074, radius: 5000m)
 
-User B
-current campus = Campus A
-
-distance(A, B) = 350 m
-
-A selected Campus A
-B selected Campus A
+distance(A, B) = 380 m ≤ 5000 m
 ```
 
 If all other conditions are satisfied:
@@ -701,7 +588,7 @@ ACTIVE (MatchRoomDO)
 
 ---
 
-## 18. Durable Object State
+## 16. Durable Object State
 
 An active match is managed by an ephemeral `MatchRoomDO`:
 
@@ -719,11 +606,11 @@ MatchRoomDO (keyed by match_id)
 
 This is runtime state.
 
-It does not need to become a PostgreSQL conversation row. When the match ends, the `MatchRoomDO` ephemeral state is cleared.
+It does not become a PostgreSQL conversation row. When the match ends, the `MatchRoomDO` ephemeral state is cleared.
 
 ---
 
-## 19. WebSocket Communication
+## 17. WebSocket Communication
 
 Once matched:
 
@@ -745,7 +632,7 @@ Normal conversation traffic stays inside the realtime layer. WebSocket Hibernati
 
 ---
 
-## 20. Normal Messages Are Never Persisted
+## 18. Normal Messages Are Never Persisted
 
 Normal messages are not written to PostgreSQL.
 
@@ -779,7 +666,7 @@ No message-retention table
 
 ---
 
-## 21. Message Validation
+## 19. Message Validation
 
 Before forwarding a message, the Durable Object checks:
 
@@ -790,7 +677,7 @@ valid sender
 valid message format
 non-empty payload
 maximum payload size
-maximum message length
+maximum message length (500 chars)
 rate limit
 ```
 
@@ -800,7 +687,7 @@ Security-sensitive decisions are made server-side.
 
 ---
 
-## 22. Message Rate Limiting
+## 20. Message Rate Limiting
 
 The server enforces rate limits.
 
@@ -810,20 +697,18 @@ Example:
 20 messages/minute/user
 ```
 
-The exact value is adjustable.
-
 The rate limit is maintained in temporary Durable Object state.
 
 The browser cannot disable the server-side limit.
 
 ---
 
-## 23. Skip
+## 21. Skip
 
 The interface contains:
 
 ```text
-[ Skip ]
+[ Skip ] (Esc)
 ```
 
 When selected:
@@ -839,18 +724,18 @@ Existing WebSocket remains connected (no reconnect/TLS overhead)
       ↓
 Current user returned to CampusMatcherDO waiting queue
       ↓
-Find another compatible user
+Find another nearby user
 ```
 
 Key lifecycle rules for skips:
 
-* **Persistent WebSocket**: The client keeps its single WebSocket connection alive. The server simply transitions the session state from `ACTIVE` (in `MatchRoomDO`) back to `WAITING` (in `CampusMatcherDO`).
-* **Partner UX**: The skipped partner is notified immediately and presented with options to either re-queue automatically or exit.
+* **Persistent WebSocket**: The client keeps its single WebSocket connection alive. The server transitions session state from `ACTIVE` (in `MatchRoomDO`) back to `WAITING` (in `CampusMatcherDO`).
+* **Partner UX**: The skipped partner is notified immediately and presented with options to either re-queue automatically or return home.
 * No page reload or WebSocket reconnect is required.
 
 ---
 
-## 24. Block and Unblock
+## 22. Block and Unblock
 
 The main user-controlled account action is:
 
@@ -888,35 +773,25 @@ Persistent block relationship
 Matcher rejects A ↔ B
 ```
 
-Blocks should be accessible from Settings so users can manage their block list.
+Blocks are accessible from Account Settings so users can manage their block list.
 
 ---
 
-## 25. Report and Block UI
+## 23. Report and Block UI
 
-Reporting and blocking should not be primary one-click actions.
+Reporting and blocking are deliberate safety actions placed inside a three-dots partner menu during active chats.
 
-The chat interface should place them inside a three-dots menu.
-
-Example:
+Menu options:
 
 ```text
-[ ⋮ ]
+Report User...
+Block User
+Leave Chat
 ```
-
-Menu:
-
-```text
-Skip
-Block
-Report
-```
-
-The purpose is to make reporting/blocking deliberate actions rather than accidental primary controls.
 
 ---
 
-## 26. Reporting
+## 24. Reporting
 
 Selecting `Report` opens a report dialog.
 
@@ -940,12 +815,6 @@ Why are you reporting this user?
 └────────────────────────────────────────────────────────┘
 ```
 
-The user then confirms:
-
-```text
-[ Cancel ]   [ Submit Report ]
-```
-
 The report is associated with:
 
 ```text
@@ -957,13 +826,13 @@ details (optional text string, max 300 chars)
 created_at
 ```
 
-A normal chat message is not stored merely because a report was submitted.
+Normal chat messages are never stored when a report is submitted.
 
 The report itself is persistent application data because it drives automatic account actions.
 
 ---
 
-## 27. Automatic Report-Based Bans
+## 25. Automatic Report-Based Bans
 
 The ban system is fully automatic.
 
@@ -977,31 +846,15 @@ The thresholds are:
 20 distinct reporters → permanent ban
 ```
 
-This corresponds to:
-
-```text
-6 distinct reports
-        ↓
-24-hour ban
-
-5 more distinct reports (11 total)
-        ↓
-7-day ban
-
-9 more distinct reports (20 total)
-        ↓
-Permanent ban
-```
-
 Key rules for report-based bans:
 
-1. **Distinct Reporters**: The count is strictly based on distinct reporting accounts so one account cannot generate repeated reports to inflate the count.
-2. **Non-Resetting Lifetime Counts**: Report counts do **NOT** reset when a ban expires. If a user receives 6 reports and serves a 24-hour ban, their report count remains 6 upon expiration. If they later receive 5 additional distinct reports (reaching 11), they immediately trigger the 7-day ban.
-3. **Server-Side Enforcement**: The server checks the ban state before allowing the account to start matching, enter the waiting queue, or exchange chat traffic.
+1. **Distinct Reporters**: The count is strictly based on distinct reporting accounts (`UNIQUE(reporter_user_id, reported_user_id)`).
+2. **Non-Resetting Lifetime Counts**: Report counts do **NOT** reset when a ban expires.
+3. **Server-Side Enforcement**: The server checks the ban state before allowing the account to enter matching or exchange messages.
 
 ---
 
-## 28. Ban State
+## 26. Ban State
 
 Ban state is persistent.
 
@@ -1024,85 +877,33 @@ TEMPORARY_7D
 PERMANENT
 ```
 
-For temporary bans:
-
-```text
-expires_at != null
-```
-
-For permanent bans:
-
-```text
-expires_at = null
-```
-
-A ban must be enforced server-side.
-
-Changing frontend state or clearing browser storage must not bypass a ban because the account identity exists independently of the browser.
-
 ---
 
-## 29. Report Threshold Flow
-
-Example progression:
-
-```text
-Reports #1 to #6 received
-    ↓
-24-hour ban triggered (Count = 6)
-    ↓
-24 hours expire → User unbanned (Count remains 6)
-    ↓
-Reports #7 to #11 received (5 new distinct reporters)
-    ↓
-7-day ban triggered (Count = 11)
-    ↓
-7 days expire → User unbanned (Count remains 11)
-    ↓
-Reports #12 to #20 received (9 new distinct reporters)
-    ↓
-Permanent ban triggered (Count = 20)
-```
-
-The system does not create multiple simultaneous bans.
-
-The latest threshold determines the account's current restriction.
-
----
-
-## 30. Duplicate & Context-Bound Reporting
+## 27. Duplicate & Context-Bound Reporting
 
 Reporting enforces two critical safeguards against abuse:
 
 ### 1. Distinct Reporter Constraint
 
-A single reporter can count at most once toward a target account's report threshold:
-
 ```text
 UNIQUE(reporter_user_id, reported_user_id)
 ```
 
-If the same user submits another report against the same account, it is rejected as already reported.
-
 ### 2. Context-Bound Enforcement
 
-Reports are strictly context-bound:
-
-* A user may **only** report another user if they are currently in an active match with that user, or within a short grace window immediately after the match ends (`match_id` verified against `MatchRoomDO` context).
+* A user may **only** report another user if they are currently in an active match with that user, or via recent match logs within a grace window (`match_id` verified against `MatchRoomDO` context).
 * Direct API submissions attempting to report arbitrary `user_id`s without a verified matching session are rejected server-side.
-
-This prevents coordinated out-of-band report bombing and target harassment.
 
 ---
 
-## 31. User Visibility
+## 28. User Visibility
 
-The matched participant sees the other user's display name.
+The matched participant sees the other user's display name and approximate distance.
 
 Example:
 
 ```text
-BlueFox482
+BlueFox482 (~150m away)
 ```
 
 The other user does not receive:
@@ -1111,46 +912,42 @@ The other user does not receive:
 email address
 Supabase user ID
 IP address
-precise coordinates
+exact coordinates
 network information
 internal identifiers
 ```
 
-The selected campus should not expose the user's exact location.
-
 ---
 
-## 32. What the Server Knows During Active Use
+## 29. What the Server Knows During Active Use
 
-During active use, the system may temporarily know:
+During active use, the system temporarily knows:
 
 ```text
 authenticated user_id
-temporary current location
-selected campuses
-current eligible campus
+temporary current location (lat, lng)
+configured search radius
 connection information
 current match
 rate-limit state
 messages currently being transmitted
 ```
 
-The precise current coordinates are matching data, not historical profile data.
+The precise coordinates are matching data, not historical profile data.
 
 The application does not maintain location history.
 
 ---
 
-## 33. Session Lifetime
+## 30. Session Lifetime
 
-A temporary session contains state similar to:
+A temporary session contains:
 
 ```text
 TemporarySession
 ├── user_id
-├── selected campuses
 ├── temporary current location
-├── matching preferences
+├── search radius
 ├── connection
 ├── match_id
 └── rate-limit state
@@ -1158,11 +955,9 @@ TemporarySession
 
 The session exists only while required.
 
-There is no requirement to create a separate permanent session row merely because someone visits the website.
-
 ---
 
-## 34. Closing the Website
+## 31. Closing the Website
 
 When the user disconnects:
 
@@ -1184,39 +979,7 @@ Normal chat history does not remain.
 
 ---
 
-## 35. Match Lifecycle
-
-```text
-WAITING
-   ↓
-MATCHED
-   ↓
-ACTIVE
-   ↓
-ENDED
-```
-
-A match ends when:
-
-```text
-User skips
-User leaves
-User blocks the other user
-User disconnects
-System terminates match
-```
-
-After termination:
-
-```text
-Old WebSocket
-      ↓
-Cannot exchange messages
-```
-
----
-
-## 36. Failure Handling
+## 32. Failure Handling
 
 If a WebSocket disappears:
 
@@ -1246,30 +1009,23 @@ Persistent PostgreSQL data remains available.
 
 ---
 
-## 37. PostgreSQL
+## 33. PostgreSQL
 
 PostgreSQL is hosted remotely by Supabase.
-
-It is not hosted on the developer's laptop.
 
 Production relationship:
 
 ```text
 Cloudflare Worker
        │
-       │ database access
+       │ database access (Prisma / PgBouncer pooler port 6543)
        ▼
-Supabase
-       │
-       ▼
-Managed PostgreSQL
+Supabase Managed PostgreSQL
 ```
-
-The database is used for account-related application data and information that must survive beyond temporary runtime state.
 
 ---
 
-## 38. Persistent Database Contents
+## 34. Persistent Database Contents
 
 Conceptually:
 
@@ -1277,10 +1033,6 @@ Conceptually:
 Supabase PostgreSQL
 │
 ├── UserProfile
-│
-├── Campus
-│
-├── UserCampusPreference
 │
 ├── UserBlock
 │
@@ -1296,435 +1048,92 @@ Every active session
 Every normal message
 Chat history
 Precise location history
+Campus geofences
 IP-based identities
 Device fingerprints
 ```
 
-Authentication identities remain managed by Supabase Auth.
-
 ---
 
-## 39. User Profile Table
-
-Conceptually:
-
-```text
-UserProfile
-├── user_id
-├── display_name
-├── created_at
-└── updated_at
-```
-
-`user_id` corresponds to the authenticated Supabase user.
-
-No separate password field exists in this table.
-
----
-
-## 40. User Campus Preference
-
-Conceptually:
-
-```text
-UserCampusPreference
-├── user_id
-├── campus_id
-└── created_at
-```
-
-This represents which campuses the user wants to discover.
-
-A user can select multiple campuses.
-
-Example:
-
-```text
-User A
-├── Campus A
-├── Campus B
-└── Campus D
-```
-
----
-
-## 41. User Block Table
-
-Conceptually:
-
-```text
-UserBlock
-├── blocker_user_id
-├── blocked_user_id
-└── created_at
-```
-
-The relationship is directional.
-
-If:
-
-```text
-A blocks B
-```
-
-then A cannot be matched with B.
-
-B can still interact with other users unless they independently block or are otherwise restricted.
-
-The matcher must check both directions so that either participant being blocked by the other prevents the pair:
-
-```text
-A blocks B
-OR
-B blocks A
-        ↓
-Reject A ↔ B
-```
-
----
-
-## 42. Report Table
-
-Conceptually:
-
-```text
-Report
-├── id
-├── reporter_user_id
-├── reported_user_id
-├── match_id (context verification)
-├── reason (category enum)
-├── details (optional string, max 300 chars)
-└── created_at
-```
-
-Constraints & rules:
-
-* **Distinct Reporter Constraint**: `UNIQUE(reporter_user_id, reported_user_id)` ensures a single reporter counts only once toward the target's threshold.
-* **Context Proof**: `match_id` references the ephemeral match session verified server-side at report time.
-* **Optional Text Box**: `details` stores optional free-text explanations (e.g. for "Other" or specific details) up to 300 characters.
-* **Lifetime Non-Resetting**: Reports remain permanently in this table and drive automatic cumulative ban thresholds even after temporary bans expire.
-
-The report table does not contain normal chat messages.
-
----
-
-## 43. Ban Table
-
-Conceptually:
-
-```text
-UserBan
-├── user_id
-├── ban_type
-├── banned_at
-├── expires_at
-└── reason
-```
-
-A permanent ban has no expiry (`expires_at = null`).
-
-A temporary ban has an expiration timestamp (`expires_at != null`).
-
-The API and realtime layer must check the current ban state before allowing service use.
-
----
-
-## 44. Campus Geospatial Data
-
-Campus configuration represents the physical boundaries of each supported campus.
-
-Conceptually:
-
-```text
-Campus
-├── id
-├── name
-├── type
-├── boundary (GeoJSON Polygon)
-├── active
-└── created_at
-```
-
-The boundary is stored as standard GeoJSON polygon data (`Json` type in Prisma schema).
-
-Geospatial resolution details:
-
-* Boundary definitions are cached in Worker / `CampusMatcherDO` memory.
-* Point-in-polygon checks are executed directly in the V8 isolate via ray-casting (`@turf/boolean-point-in-polygon`).
-* Distance calculations between candidate users inside campuses use the Haversine formula in TypeScript.
-* User coordinates are strictly ephemeral in-memory variables and are discarded after matching decisions.
-
----
-
-## 45. No IP-Based Identity
-
-The network infrastructure may receive an IP address as part of normal internet operation.
-
-The application does not use IP as the account identity.
-
-Do not build:
-
-```text
-IP
- ↓
-Permanent user identity
-```
-
-The authenticated Supabase user ID is the application account identity.
-
----
-
-## 46. No Device Fingerprinting
-
-The application does not use device fingerprinting to identify accounts.
-
-Do not build:
-
-```text
-Browser characteristics
-+
-Hardware characteristics
-+
-Network characteristics
-        ↓
-Permanent identity
-```
-
-The account remains tied to the authenticated Supabase identity.
-
----
-
-## 47. No Location History
-
-The application uses current location only for eligibility and matching.
-
-Conceptually:
-
-```text
-Browser geolocation
-       ↓
-Temporary current coordinates
-       ↓
-In-isolate campus eligibility check
-       ↓
-In-memory distance calculation
-       ↓
-Match decision
-       ↓
-Temporary coordinates discarded
-```
-
-The application does not maintain a historical movement trail.
-
----
-
-## 48. Automatic Abuse Controls
-
-The system should automatically enforce:
-
-```text
-HTTP rate limits
-WebSocket message rate limits
-Session creation limits
-Reconnect limits
-Queue abuse limits
-Connection limits
-Payload-size limits
-Message-size limits
-Ban enforcement
-Block enforcement
-Context-bound report threshold enforcement
-Report detail character limits (max 300 chars)
-```
-
-These are server-side controls.
-
-No continuous human observation of ordinary conversations is required for them to work.
-
----
-
-## 49. Security Principles
-
-The browser is never trusted for security-sensitive decisions.
-
-The server determines:
-
-```text
-authenticated user identity
-account ban state
-match membership & match_id context
-message ownership
-rate limits
-block relationships
-campus eligibility (in-memory polygon verification)
-proximity eligibility
-distinct report counts
-```
-
-The browser cannot legitimately claim:
-
-```text
-"I am user X"
-"I am not banned"
-"I am in match Y"
-"I can send unlimited messages"
-"I can bypass a block"
-"I can ignore campus restrictions"
-"I can report arbitrary user Z without a match"
-```
-
----
-
-## 50. Data Retention Model
-
-### Normal messages
-
-```text
-No persistent retention
-```
-
-### Precise current location
-
-```text
-Temporary only (in-memory during matching)
-```
-
-### Temporary session
-
-```text
-Temporary only (in-memory in CampusMatcherDO / MatchRoomDO)
-```
-
-### User profile
-
-```text
-Persistent
-```
-
-### Campus preferences
-
-```text
-Persistent
-```
-
-### Blocks
-
-```text
-Persistent until unblocked or otherwise removed
-```
-
-### Reports
-
-```text
-Persistent (non-resetting cumulative history with match_id and optional details)
-```
-
-### Bans
-
-```text
-Persistent while active
-```
-
-The architecture does not impose a persistent database for ordinary conversations.
-
----
-
-## 51. Complete Production Architecture
+## 35. Complete Production Architecture
 
 ```text
                                 INTERNET
-                                   │
-                                   ▼
-                        ┌─────────────────────┐
-                        │   Cloudflare Worker │
-                        │                     │
-                        │ HTTP/API            │
-                        │ Auth verification   │
-                        │ Validation          │
-                        │ Session handling    │
-                        │ Rate limiting       │
-                        │ WebSocket routing   │
-                        │ Context-bound report│
-                        │ Ban enforcement     │
-                        └──────────┬──────────┘
-                                   │
-                     ┌─────────────┴─────────────┐
-                     │                           │
-                     ▼                           ▼
-            ┌─────────────────┐        ┌─────────────────────┐
-            │ Durable Objects │        │ Supabase             │
-            │                 │        │                     │
-            │ CampusMatcherDO │        │ Auth (Email/Google) │
-            │  - Queues       │        │                     │
-            │  - Geo matching │        │ Managed PostgreSQL  │
-            │  - Pairing      │        │  - User profiles    │
-            │        ↓        │        │  - Campuses (GeoJSON│
-            │ MatchRoomDO     │        │  - Preferences      │
-            │  - Active chat  │        │  - Blocks           │
-            │  - Hibernation  │        │  - Reports & reasons│
-            │  - Ephemeral ctx│        │  - Bans             │
-            └────────┬────────┘        └─────────────────────┘
-                     │
-                 WebSockets
-                  ┌──┴──┐
-                  │     │
-                User A User B
+                                    │
+                                    ▼
+                         ┌─────────────────────┐
+                         │   Cloudflare Worker │
+                         │                     │
+                         │ HTTP/API            │
+                         │ Auth verification   │
+                         │ Validation          │
+                         │ Session handling    │
+                         │ Rate limiting       │
+                         │ WebSocket routing   │
+                         │ Context-bound report│
+                         │ Ban enforcement     │
+                         └──────────┬──────────┘
+                                    │
+                      ┌─────────────┴─────────────┐
+                      │                           │
+                      ▼                           ▼
+             ┌─────────────────┐        ┌─────────────────────┐
+             │ Durable Objects │        │ Supabase             │
+             │                 │        │                     │
+             │ CampusMatcherDO │        │ Auth (Email/Google) │
+             │  - Queues       │        │                     │
+             │  - Distance     │        │ Managed PostgreSQL  │
+             │  - Pairing      │        │  - User profiles    │
+             │        ↓        │        │  - Blocks           │
+             │ MatchRoomDO     │        │  - Reports & reasons│
+             │  - Active chat  │        │  - Bans             │
+             │  - Hibernation  │        └─────────────────────┘
+             │  - Ephemeral ctx│
+             └────────┬────────┘
+                      │
+                  WebSockets
+                   ┌──┴──┐
+                   │     │
+                 User A User B
 ```
 
 ---
 
-## 52. Technology Decisions
+## 36. Technology Decisions
 
 | Component | Decision |
 | --- | --- |
 | Frontend | Next.js + TypeScript |
 | Runtime & Package Manager | Bun |
 | HTTP/API | Cloudflare Worker |
-| Authentication | Supabase Auth |
-| Authentication methods | Email + Google |
-| Token Verification | Asymmetric ECC (P-256) via Supabase JWKS using `jose` (zero shared secrets) |
+| Authentication | Supabase Auth (Email + Google) |
+| Token Verification | Asymmetric ECC (P-256) via Supabase JWKS using `jose` |
 | Modern API Keys | Publishable key (`sb_publishable_...`) + Secret key (`sb_secret_...`) |
 | Realtime Architecture | Two-Tier Cloudflare Durable Objects (`CampusMatcherDO` + `MatchRoomDO`) |
 | Transport | WebSockets (single persistent connection across skips) |
 | WebSocket optimization | WebSocket Hibernation in `MatchRoomDO` |
-| Matching & Queue | In-memory `CampusMatcherDO` per campus/region |
-| Proximity Calculation | In-memory Haversine formula on temporary coordinates |
-| Campus Eligibility | In-isolate GeoJSON Polygon Point-in-Polygon (`@turf/boolean-point-in-polygon`) |
-| Realtime rate limiting | In-memory sliding window in `MatchRoomDO` |
-| Persistent database | Supabase PostgreSQL |
-| PostgreSQL hosting | Supabase managed service (connection pooler port 6543) |
+| Matchmaking Engine | In-memory `CampusMatcherDO` using Haversine distance proximity |
+| Search Radius | User-configurable (1–50 km, default 5 km) with preset buttons |
+| Location Calibration | Client-side geolocation with custom coordinate calibration option |
+| Realtime rate limiting | In-memory sliding window in `MatchRoomDO` (20 msgs/min) |
+| Persistent database | Supabase PostgreSQL (via transaction pooler port 6543) |
 | Database ORM & Schema | Prisma (`schema.prisma` as single declarative source of truth) |
-| Database driver adapter | `@prisma/adapter-pg` / `@neondatabase/serverless` with `nodejs_compat` |
 | Normal message persistence | None |
 | Normal chat history | None |
-| Precise location history | None |
+| Location history | None |
 | Account identity | Supabase Auth user ID |
 | Public identity | Random editable display name |
-| Campus selection | Persistent user preferences |
 | Blocking | Persistent user-to-user blocks |
-| Unblocking | Supported |
-| Reporting | In-product context-bound flow (requires active `match_id`) |
-| Report reasons | Predefined categories + "Other" (with optional text box, max 300 chars) |
-| Report threshold enforcement | Automatic server-side bans |
-| Report count persistence | Lifetime cumulative non-resetting distinct reporter count |
-| 24-hour ban threshold | 6 distinct reporters |
-| 7-day ban threshold | 11 distinct reporters (5 additional reports) |
-| Permanent ban threshold | 20 distinct reporters (9 additional reports) |
+| Reporting | Context-bound flow (requires active `match_id`) with categories & optional text |
+| Report thresholds | Automatic server-side bans (6 $\rightarrow$ 24h, 11 $\rightarrow$ 7d, 20 $\rightarrow$ permanent) |
 | Skip lifecycle | In-session re-queueing to `CampusMatcherDO` without WebSocket reconnect |
 | IP-based identity | None |
 | Device fingerprinting | None |
 | Proactive human moderation | None |
-| Manual review queue | None |
-| Moderation dashboard | None |
-| WebRTC | Not used |
-| Supabase Realtime | Not used |
-| D1 | Not used |
-| Developer machine | Development only |
 
 ---
 
-## 53. Core Principle
+## 37. Core Principle
 
 ```text
 Cloudflare Worker
@@ -1734,7 +1143,7 @@ Supabase Auth
     owns account authentication.
 
 CampusMatcherDO
-    owns waiting queues and in-memory geospatial matching.
+    owns waiting queues and in-memory distance proximity matching.
 
 MatchRoomDO
     owns ephemeral active conversations and message forwarding via WebSocket Hibernation.
@@ -1754,11 +1163,8 @@ Account identity
 Public identity
     is a random editable display name.
 
-Campus selection
-    determines where the user wants to discover people.
-
-Campus geofences
-    ensure matching is limited to users physically inside eligible campuses.
+Distance radius
+    determines the maximum proximity within which two users can be matched (default 5 km).
 
 Block
     is a persistent account-to-account action.
@@ -1782,7 +1188,7 @@ AUTHENTICATED ACCESS
 +
 PSEUDONYMOUS DISPLAY IDENTITY
 +
-CAMPUS-ONLY DISCOVERY
+DISTANCE-BASED PROXIMITY DISCOVERY (DEFAULT 5 KM)
 +
 TWO-TIER DURABLE OBJECTS
 +
