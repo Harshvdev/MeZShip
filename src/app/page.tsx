@@ -2,7 +2,9 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { Navbar } from "@/components/Navbar";
-import { MessageBubble } from "@/components/chat/MessageBubble";
+import { RadarDial } from "@/components/matching/RadarDial";
+import { TrustBadges } from "@/components/common/TrustBadges";
+import { ChatWindow } from "@/components/chat/ChatWindow";
 import { ReportModal } from "@/components/modals/ReportModal";
 import { BlockConfirmModal } from "@/components/modals/BlockConfirmModal";
 import { SettingsModal } from "@/components/modals/SettingsModal";
@@ -13,29 +15,8 @@ import { useGeolocation } from "@/hooks/useGeolocation";
 import { useChatSocket } from "@/hooks/useChatSocket";
 import type { ReportReason } from "@/lib/protocol";
 import { getApiUrl } from "@/lib/api";
-import {
-  Send,
-  MapPin,
-  Sparkles,
-  Radio,
-  X,
-  AlertTriangle,
-  RotateCcw,
-  Sliders,
-  ShieldAlert,
-  UserX,
-  LogOut,
-  MoreVertical,
-} from "lucide-react";
+import { Radio, AlertTriangle, RotateCcw, LogOut, ArrowRight } from "lucide-react";
 import { useRouter } from "next/navigation";
-
-const RADIUS_PRESETS = [
-  { label: "1 km", value: 1000 },
-  { label: "5 km", value: 5000 },
-  { label: "10 km", value: 10000 },
-  { label: "25 km", value: 25000 },
-  { label: "50 km", value: 50000 },
-];
 
 export default function Home() {
   const router = useRouter();
@@ -52,15 +33,9 @@ export default function Home() {
     resetToAuto,
   } = useGeolocation();
 
-  const [matchingRadius, setMatchingRadius] = useState<number>(5000);
+  const [matchingRadius, setMatchingRadius] = useState<number>(5000); // 5km default
   const [isBanned, setIsBanned] = useState(false);
   const [banReason, setBanReason] = useState<string | null>(null);
-
-  // Chat input
-  const [inputText, setInputText] = useState("");
-  const inputRef = useRef<HTMLInputElement>(null);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-  const [showPartnerMenu, setShowPartnerMenu] = useState(false);
 
   // Modals
   const [showSettings, setShowSettings] = useState(false);
@@ -91,25 +66,9 @@ export default function Home() {
     reportPastMatch,
   } = useChatSocket(profile?.user_id, profile?.display_name, token, lat, lng);
 
-  // Auto-scroll chat messages
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
-
-  // Focus input when match starts
-  useEffect(() => {
-    if (chatState === "MATCHED") {
-      setShowPartnerMenu(false);
-      setTimeout(() => {
-        inputRef.current?.focus();
-      }, 100);
-    }
-  }, [chatState]);
-
-  // Poll live stats & send presence heartbeat
+  // Poll live stats & heartbeat
   useEffect(() => {
     if (authLoading) return;
-
     let isMounted = true;
 
     async function fetchStats() {
@@ -148,7 +107,7 @@ export default function Home() {
     };
   }, [token, authLoading, setOnlineCount]);
 
-  // Check Ban State
+  // Check ban state
   useEffect(() => {
     if (!token) return;
 
@@ -161,7 +120,7 @@ export default function Home() {
           const data = (await banRes.json()) as { isBanned?: boolean; ban?: { reason?: string } };
           if (data.isBanned) {
             setIsBanned(true);
-            setBanReason(data.ban?.reason || "Account suspended due to report threshold.");
+            setBanReason(data.ban?.reason || "Account suspended due to safety report threshold.");
           }
         }
       } catch (e) {
@@ -172,6 +131,8 @@ export default function Home() {
     checkUserStatus();
   }, [token]);
 
+  const radiusKm = Math.round(matchingRadius / 1000);
+
   const handleStartChat = useCallback(() => {
     if (!user) {
       router.push("/auth");
@@ -180,12 +141,9 @@ export default function Home() {
     startMatching(matchingRadius);
   }, [user, router, startMatching, matchingRadius]);
 
-  const handleSend = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!inputText.trim() || partnerLeaveReason || chatState !== "MATCHED") return;
-    sendMessage(inputText);
-    setInputText("");
-  };
+  const handleRadiusChange = useCallback((km: number) => {
+    setMatchingRadius(km * 1000);
+  }, []);
 
   // Keyboard Shortcuts (Esc to Start / Skip / Cancel, Enter to Start when idle)
   useEffect(() => {
@@ -214,10 +172,12 @@ export default function Home() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [chatState, skip, leave, handleStartChat]);
 
-  const radiusKm = Math.round(matchingRadius / 1000);
+  const isMatched = chatState === "MATCHED";
+  const isSearching = chatState === "SEARCHING";
 
   return (
-    <div className="h-full h-dvh max-h-dvh w-full flex flex-col overflow-hidden bg-[#090a0f]">
+    <div className="h-full h-dvh max-h-dvh w-full flex flex-col overflow-hidden bg-ink text-paper font-body">
+      {/* Header */}
       <Navbar
         profile={profile}
         onlineCount={onlineCount}
@@ -227,469 +187,137 @@ export default function Home() {
         onSignOut={signOut}
       />
 
-      <main className="flex-1 min-h-0 max-w-3xl w-full mx-auto px-2 sm:px-4 py-2 sm:py-4 flex flex-col overflow-hidden">
+      {/* Main Viewport */}
+      <main className="flex-1 min-h-0 w-full max-w-7xl mx-auto px-3 sm:px-6 py-2 flex flex-col overflow-hidden">
         {/* BAN SCREEN STATE */}
         {isBanned ? (
-          <div className="p-6 sm:p-8 rounded-3xl glass-panel border border-rose-500/30 text-center max-w-md mx-auto animate-fade-in shadow-2xl my-auto">
-            <div className="w-12 h-12 rounded-2xl bg-rose-500/10 border border-rose-500/20 text-rose-400 flex items-center justify-center mx-auto mb-4">
+          <div className="p-6 sm:p-8 rounded-2xl bg-surface border border-alert/30 text-center max-w-md mx-auto my-auto shadow-2xl animate-fade-in">
+            <div className="w-12 h-12 rounded-xl bg-alert/10 border border-alert/30 text-alert flex items-center justify-center mx-auto mb-4">
               <AlertTriangle className="w-6 h-6" />
             </div>
-            <h2 className="text-xl font-bold text-white mb-2">Account Suspended</h2>
-            <p className="text-sm text-gray-400 mb-4">
+            <h2 className="text-lg font-bold font-display text-paper mb-2">Signal Blocked</h2>
+            <p className="text-xs sm:text-sm text-ash mb-4 leading-relaxed">
               {banReason || "Your account has accumulated reports exceeding safety limits."}
             </p>
-            <p className="text-xs text-gray-500">
-              Bans are automated based on distinct community reports.
+            <p className="font-mono text-[11px] text-ash/70">
+              Safety blocks are automated based on distinct community reports.
             </p>
           </div>
+        ) : isMatched ? (
+          /* ACTIVE MATCHED CHAT VIEW (Desktop & Mobile Full Height) */
+          <div className="flex-1 min-h-0 w-full max-w-4xl mx-auto flex flex-col overflow-hidden animate-fade-in">
+            <ChatWindow
+              partner={partner}
+              messages={messages}
+              partnerLeaveReason={partnerLeaveReason}
+              onSendMessage={sendMessage}
+              onSkip={skip}
+              onLeave={leave}
+              onOpenReport={() => setShowReport(true)}
+              onOpenBlock={() => setShowBlock(true)}
+            />
+          </div>
         ) : (
-          /* OPENTALK STYLE CHAT CONTAINER */
-          <div className="w-full flex-1 min-h-0 rounded-2xl sm:rounded-3xl glass-panel border border-white/10 overflow-hidden shadow-2xl flex flex-col relative transition-all duration-300">
-            {/* Top Scope & Info Header */}
-            <div className="shrink-0 px-3.5 sm:px-5 py-2.5 sm:py-3 border-b border-white/10 bg-white/[0.03] flex items-center justify-between gap-2">
-              {chatState === "MATCHED" && partner ? (
-                /* Partner Header when Matched */
-                <>
-                  <div className="flex items-center gap-2.5 sm:gap-3 min-w-0 flex-1">
-                    <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-gradient-to-tr from-teal-500 to-indigo-600 flex items-center justify-center font-bold text-white text-xs shadow-md shrink-0">
-                      {partner.displayName?.slice(0, 2).toUpperCase() || "??"}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="text-xs sm:text-sm font-semibold text-white leading-tight truncate">
-                        {partner.displayName || "Connected Partner"}
-                      </div>
-                      <div className="flex items-center gap-1 text-[11px] sm:text-xs text-teal-400 mt-0.5">
-                        <MapPin className="w-2.5 h-2.5 sm:w-3 sm:h-3 shrink-0" />
-                        <span className="truncate">~{partner.distanceMeters ?? 150}m away</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-                    {partnerLeaveReason ? (
-                      <div className="flex items-center gap-1.5 px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-400 text-[11px] sm:text-xs font-medium">
-                        <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
-                        <span>Left</span>
-                      </div>
-                    ) : (
-                      <div className="flex items-center gap-1.5 px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[11px] sm:text-xs font-medium">
-                        <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                        <span>Live 1:1</span>
-                      </div>
-                    )}
-
-                    {/* Safety Options Menu */}
-                    <div className="relative">
-                      <button
-                        onClick={() => setShowPartnerMenu(!showPartnerMenu)}
-                        className="p-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white border border-white/10 transition-colors"
-                        title="Partner options"
-                      >
-                        <MoreVertical className="w-4 h-4" />
-                      </button>
-
-                      {showPartnerMenu && (
-                        <>
-                          <div
-                            className="fixed inset-0 z-20"
-                            onClick={() => setShowPartnerMenu(false)}
-                          />
-                          <div className="absolute right-0 top-full mt-2 w-48 rounded-2xl glass-panel border border-white/15 shadow-2xl p-1.5 z-30 animate-fade-in">
-                            <button
-                              onClick={() => {
-                                setShowPartnerMenu(false);
-                                setShowReport(true);
-                              }}
-                              className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-left text-xs font-medium text-amber-300 hover:bg-amber-500/10 transition-colors"
-                            >
-                              <ShieldAlert className="w-4 h-4 text-amber-400" />
-                              <span>Report User...</span>
-                            </button>
-
-                            <button
-                              onClick={() => {
-                                setShowPartnerMenu(false);
-                                setShowBlock(true);
-                              }}
-                              className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-left text-xs font-medium text-rose-300 hover:bg-rose-500/10 transition-colors"
-                            >
-                              <UserX className="w-4 h-4 text-rose-400" />
-                              <span>Block User</span>
-                            </button>
-
-                            <div className="my-1 border-t border-white/10" />
-
-                            <button
-                              onClick={() => {
-                                setShowPartnerMenu(false);
-                                leave();
-                              }}
-                              className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-left text-xs font-medium text-gray-400 hover:text-white hover:bg-white/5 transition-colors"
-                            >
-                              <LogOut className="w-4 h-4" />
-                              <span>Leave Chat</span>
-                            </button>
-                          </div>
-                        </>
-                      )}
-                    </div>
-                  </div>
-                </>
-              ) : (
-                /* Default Header Pill */
-                <div className="flex items-center justify-between w-full gap-2 min-w-0">
-                  <div className="flex items-center gap-2 text-xs font-semibold text-white">
-                    <span className="w-2 h-2 rounded-full bg-teal-400" />
-                    <span>MeZShip Live 1:1</span>
-                  </div>
-
-                  <div className="flex items-center gap-1.5 text-xs text-gray-400 font-medium shrink-0">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                    <span>Distance Match</span>
-                  </div>
-                </div>
-              )}
+          /* DESKTOP SPLIT SCREEN + MOBILE SINGLE COLUMN (STRICTLY NO WHOLE-PAGE SCROLL) */
+          <div className="flex-1 min-h-0 w-full grid grid-cols-1 lg:grid-cols-12 gap-2 sm:gap-4 lg:gap-8 items-center overflow-hidden">
+            {/* MOBILE ONLY: Hero Radar Dial at top */}
+            <div className="lg:hidden flex-1 min-h-0 flex flex-col items-center justify-center py-1 overflow-hidden">
+              <RadarDial
+                radiusKm={radiusKm}
+                onRadiusChange={handleRadiusChange}
+                state={chatState}
+                onStartMatching={handleStartChat}
+                partnerDistanceMeters={partner?.distanceMeters}
+                partnerDisplayName={partner?.displayName}
+                isCalibrated={isCalibrated}
+              />
             </div>
 
-            {/* Middle Main Viewport */}
-            <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-3 sm:p-5 flex flex-col">
-              {chatState === "IDLE" ? (
-                /* IDLE STATE: Clean OpenTalk Card with Distance Radius Slider */
-                <div className="flex-1 flex flex-col justify-between animate-fade-in my-auto">
-                  <div className="space-y-4 pt-1">
-                    {/* Welcoming Message Bubble */}
-                    <div className="p-4 sm:p-5 rounded-2xl bg-white/5 border border-white/10 max-w-lg shadow-lg">
-                      <h2 className="text-base sm:text-lg font-bold text-white mb-1">
-                        Welcome to MeZShip 🎉
-                      </h2>
-                      <p className="text-xs sm:text-sm text-gray-300 leading-relaxed">
-                        <span className="font-semibold text-emerald-400">{onlineCount}</span>{" "}
-                        {onlineCount === 1 ? "person" : "people"} online right now. Connect spontaneously with nearby users based on distance.
-                      </p>
-                    </div>
-
-                    {/* Radius Slider Card */}
-                    <div className="p-4 sm:p-5 rounded-2xl bg-white/5 border border-white/10 max-w-lg shadow-lg space-y-3">
-                      <div className="flex items-center justify-between">
-                        <label className="text-xs sm:text-sm font-semibold text-white flex items-center gap-2">
-                          <Sliders className="w-4 h-4 text-teal-400" />
-                          <span>Search Radius</span>
-                        </label>
-                        <span className="text-xs sm:text-sm font-bold px-3 py-1 rounded-xl bg-teal-500/15 border border-teal-500/30 text-teal-300">
-                          {radiusKm} km
-                        </span>
-                      </div>
-
-                      {/* Slider Input */}
-                      <div className="space-y-1.5">
-                        <input
-                          type="range"
-                          min="1"
-                          max="50"
-                          step="1"
-                          value={radiusKm}
-                          onChange={(e) => setMatchingRadius(parseInt(e.target.value, 10) * 1000)}
-                          className="w-full h-2.5 bg-white/10 rounded-lg appearance-none cursor-pointer accent-teal-400 hover:accent-teal-300 transition-all"
-                        />
-                        <div className="flex items-center justify-between text-[11px] text-gray-400 font-medium px-0.5">
-                          <span>1 km</span>
-                          <span>10 km</span>
-                          <span>25 km</span>
-                          <span>50 km</span>
-                        </div>
-                      </div>
-
-                      {/* Radius Preset Chips */}
-                      <div className="flex items-center gap-1.5 flex-wrap pt-1">
-                        {RADIUS_PRESETS.map((p) => {
-                          const isSelected = matchingRadius === p.value;
-                          return (
-                            <button
-                              key={p.value}
-                              type="button"
-                              onClick={() => setMatchingRadius(p.value)}
-                              className={`px-3 py-1.5 rounded-xl text-xs font-semibold border transition-all ${
-                                isSelected
-                                  ? "bg-teal-500 text-gray-950 border-teal-400 shadow-md shadow-teal-500/20 scale-105"
-                                  : "bg-white/5 hover:bg-white/10 border-white/10 text-gray-300"
-                              }`}
-                            >
-                              {p.label}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-
-                    {/* Start Chatting Button */}
-                    <div className="pt-1">
-                      <button
-                        onClick={handleStartChat}
-                        className="flex items-center gap-3 px-6 py-3.5 rounded-2xl bg-gradient-to-r from-teal-500 via-indigo-600 to-purple-600 hover:from-teal-400 hover:to-purple-500 text-white font-semibold text-sm shadow-xl shadow-teal-500/20 transition-all hover:scale-[1.02] active:scale-[0.99] group"
-                      >
-                        <span className="text-amber-300 text-base group-hover:translate-x-0.5 transition-transform">
-                          ▶
-                        </span>
-                        <span>Start chatting (within {radiusKm} km)</span>
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Highlights Footer */}
-                  <div className="pt-4 sm:pt-6 border-t border-white/5 flex flex-wrap items-center gap-3 sm:gap-6 text-[11px] sm:text-xs text-gray-400 mt-6">
-                    <div className="flex items-center gap-1.5">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" />
-                      <span>Radius: {radiusKm} km</span>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      <span className="w-1.5 h-1.5 rounded-full bg-teal-400 shrink-0" />
-                      <span>Pseudonymous identity</span>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 shrink-0" />
-                      <span>Zero chat retention</span>
-                    </div>
-                  </div>
-                </div>
-              ) : chatState === "SEARCHING" ? (
-                /* SEARCHING STATE: Radar Scanning Indicator */
-                <div className="flex-1 flex flex-col items-center justify-center text-center p-4 sm:p-6 animate-fade-in my-auto">
-                  <div className="relative flex items-center justify-center w-36 h-36 sm:w-44 sm:h-44 my-3 sm:my-4 overflow-hidden pointer-events-none select-none">
-                    <div className="absolute inset-0 rounded-full border border-teal-500/30 animate-radar-pulse will-change-transform transform-gpu" />
-                    <div
-                      className="absolute inset-0 rounded-full border border-indigo-500/40 animate-radar-pulse will-change-transform transform-gpu"
-                      style={{ animationDelay: "1s" }}
-                    />
-                    <div
-                      className="absolute inset-0 rounded-full border border-purple-500/40 animate-radar-pulse will-change-transform transform-gpu"
-                      style={{ animationDelay: "2s" }}
-                    />
-
-                    {/* Center Node */}
-                    <div className="relative z-10 w-12 h-12 sm:w-16 sm:h-16 rounded-full bg-gradient-to-tr from-teal-500 to-indigo-600 flex items-center justify-center shadow-xl shadow-teal-500/30 border border-white/20">
-                      <Radio className="w-5 h-5 sm:w-7 sm:h-7 text-white animate-pulse" />
-                    </div>
-                  </div>
-
-                  <h3 className="text-sm sm:text-base font-semibold text-white mb-1">
-                    Searching for someone nearby
-                  </h3>
-                  <p className="text-[11px] sm:text-xs text-gray-400 max-w-sm mb-3 sm:mb-4">
-                    {statusMessage || `Scanning for online users within ${radiusKm} km radius...`}
-                  </p>
-
-                  <div className="flex items-center gap-2 mb-4 sm:mb-6">
-                    <div className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-[11px] sm:text-xs text-emerald-300 font-medium">
-                      <span className="w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full bg-emerald-400 animate-pulse" />
-                      <span>{onlineCount} online</span>
-                    </div>
-                    <div className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1 rounded-full bg-teal-500/10 border border-teal-500/20 text-[11px] sm:text-xs text-teal-300 font-medium">
-                      <MapPin className="w-3 h-3" />
-                      <span>Within {radiusKm} km</span>
-                    </div>
-                  </div>
-
-                  <button
-                    onClick={leave}
-                    className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white border border-white/10 text-xs transition-colors"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                    <span>Cancel Search</span>
-                  </button>
-                </div>
-              ) : chatState === "PARTNER_SKIPPED" ? (
-                /* PARTNER SKIPPED / LEFT STATE */
-                <div className="flex-1 flex flex-col items-center justify-center text-center p-4 sm:p-6 animate-fade-in max-w-md mx-auto my-auto">
-                  <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-2xl bg-teal-500/10 border border-teal-500/20 text-teal-400 flex items-center justify-center mb-3 sm:mb-4">
-                    <RotateCcw className="w-5 h-5 sm:w-6 sm:h-6" />
-                  </div>
-                  <h3 className="text-sm sm:text-base font-semibold text-white mb-1">
-                    {partnerLeaveReason === "leave"
-                      ? "Partner Left the Chat"
-                      : partnerLeaveReason === "disconnect"
-                      ? "Partner Disconnected"
-                      : "Partner Skipped"}
-                  </h3>
-                  <p className="text-[11px] sm:text-xs text-gray-400 mb-5 sm:mb-6">
-                    {partnerLeaveReason === "leave"
-                      ? "Your chat partner left the conversation."
-                      : partnerLeaveReason === "disconnect"
-                      ? "Partner disconnected. Reconnecting nearby..."
-                      : `Partner skipped. Searching for next person within ${radiusKm} km...`}
-                  </p>
-                  <div className="flex items-center gap-2.5 sm:gap-3">
-                    <button
-                      onClick={leave}
-                      className="flex items-center gap-1.5 px-3.5 sm:px-4 py-2 rounded-xl bg-white/5 hover:bg-rose-500/20 text-gray-300 hover:text-rose-300 border border-white/10 text-xs font-medium transition-colors"
-                    >
-                      <LogOut className="w-3.5 h-3.5" />
-                      <span>Exit to Home</span>
-                    </button>
-                    <button
-                      onClick={handleStartChat}
-                      className="px-4 sm:px-5 py-2 rounded-xl bg-teal-500 hover:bg-teal-400 text-gray-950 text-xs font-bold shadow-lg shadow-teal-500/25 transition-all"
-                    >
-                      Find Next Partner
-                    </button>
-                  </div>
-                </div>
-              ) : chatState === "ERROR" ? (
-                /* ERROR STATE */
-                <div className="flex-1 flex flex-col items-center justify-center text-center p-4 sm:p-6 animate-fade-in max-w-md mx-auto my-auto">
-                  <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-2xl bg-rose-500/10 border border-rose-500/20 text-rose-400 flex items-center justify-center mb-3 sm:mb-4">
-                    <AlertTriangle className="w-5 h-5 sm:w-6 sm:h-6" />
-                  </div>
-                  <h3 className="text-sm sm:text-base font-semibold text-white mb-1">
-                    Connection Issue
-                  </h3>
-                  <p className="text-[11px] sm:text-xs text-gray-400 mb-5 sm:mb-6">
-                    {statusMessage || "Unable to establish matchmaking connection. Please try again."}
-                  </p>
-                  <div className="flex items-center gap-2.5 sm:gap-3">
-                    <button
-                      onClick={leave}
-                      className="flex items-center gap-1.5 px-3.5 sm:px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-gray-300 text-xs font-medium transition-colors"
-                    >
-                      <LogOut className="w-3.5 h-3.5" />
-                      <span>Return Home</span>
-                    </button>
-                    <button
-                      onClick={handleStartChat}
-                      className="px-4 sm:px-5 py-2 rounded-xl bg-teal-500 hover:bg-teal-400 text-gray-950 text-xs font-bold shadow-lg shadow-teal-500/25 transition-all"
-                    >
-                      Retry
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                /* MATCHED ACTIVE MESSAGES STREAM */
-                <div className="flex-1 min-h-0 flex flex-col justify-between">
-                  {messages.length === 0 ? (
-                    <div className="h-full flex flex-col items-center justify-center text-center p-4 sm:p-6 text-gray-500 text-xs my-auto">
-                      <Sparkles className="w-7 h-7 sm:w-8 sm:h-8 text-teal-400/50 mb-2 animate-pulse" />
-                      <p className="font-medium text-gray-300">You are connected!</p>
-                      <p className="text-gray-500 mt-0.5 text-[11px] sm:text-xs">
-                        Messages are live in memory and never written to disk.
-                      </p>
-                    </div>
-                  ) : (
-                    <div className="space-y-2 py-1">
-                      {messages.map((msg) => (
-                        <MessageBubble key={msg.id} message={msg} />
-                      ))}
-                      <div ref={messagesEndRef} />
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-
-            {/* Bottom Control Bar (OpenTalk Signature Bar) */}
-            <div className="shrink-0 px-2 sm:px-4 py-2 sm:py-3 bg-white/[0.04] border-t border-white/10 flex items-center gap-1.5 sm:gap-2">
-              {/* Dynamic Left Action Button Group */}
-              {chatState === "IDLE" ? (
-                <button
-                  type="button"
-                  onClick={handleStartChat}
-                  className="flex items-center justify-center gap-1.5 px-3.5 sm:px-5 py-2 sm:py-2.5 rounded-xl bg-teal-500 hover:bg-teal-400 text-gray-950 font-bold text-xs sm:text-sm shadow-lg shadow-teal-500/20 transition-all hover:scale-[1.02] active:scale-[0.98] shrink-0"
-                >
-                  <span>Start</span>
-                  <span className="hidden md:inline-block text-[10px] font-semibold bg-black/20 text-black px-1.5 py-0.5 rounded">
-                    Esc
+            {/* LEFT COLUMN (~40% on Desktop): Brand thesis, headline, trust tags, CTA */}
+            <div className="lg:col-span-5 flex flex-col justify-center gap-2.5 sm:gap-5 order-2 lg:order-1 px-1 shrink-0 lg:shrink">
+              {/* Eyebrow & Headline */}
+              <div className="space-y-1 sm:space-y-1.5">
+                <div className="flex items-center gap-2">
+                  <span className="font-mono text-[9px] sm:text-xs font-semibold tracking-wider text-signal bg-signal/10 border border-signal/20 px-2 py-0.5 rounded">
+                    PSEUDONYMOUS · LOCAL · LIVE
                   </span>
-                </button>
-              ) : chatState === "SEARCHING" ? (
-                <button
-                  type="button"
-                  onClick={leave}
-                  className="flex items-center justify-center gap-1.5 px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/30 font-semibold text-xs sm:text-sm transition-all shrink-0"
-                >
-                  <X className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                  <span>Cancel</span>
-                  <span className="hidden md:inline-block text-[10px] font-semibold bg-rose-500/30 text-rose-200 px-1.5 py-0.5 rounded">
-                    Esc
-                  </span>
-                </button>
-              ) : chatState === "MATCHED" ? (
-                /* MATCHED: Leave + Skip buttons */
-                <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
-                  <button
-                    type="button"
-                    onClick={leave}
-                    className="flex items-center justify-center gap-1 px-2.5 sm:px-3.5 py-2 sm:py-2.5 rounded-xl bg-white/5 hover:bg-rose-500/20 text-gray-300 hover:text-rose-300 border border-white/10 hover:border-rose-500/30 font-semibold text-xs sm:text-sm transition-all"
-                    title="Leave chat and return to home"
-                  >
-                    <LogOut className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                    <span className="hidden xs:inline sm:inline">Leave</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={skip}
-                    className="flex items-center justify-center gap-1.5 px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs sm:text-sm shadow-lg shadow-indigo-600/30 transition-all hover:scale-[1.02] active:scale-[0.98]"
-                    title="Skip to next user"
-                  >
-                    <span>Skip</span>
-                    <span className="hidden md:inline-block text-[10px] font-semibold bg-black/30 text-indigo-100 px-1.5 py-0.5 rounded">
-                      Esc
-                    </span>
-                  </button>
                 </div>
-              ) : (
-                /* PARTNER_SKIPPED / LEFT: Leave + Next buttons */
-                <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
+                <h1 className="font-display text-lg sm:text-2xl lg:text-4xl font-bold tracking-tight text-paper leading-tight">
+                  There&apos;s always someone nearby.
+                </h1>
+                <p className="text-[11px] sm:text-xs lg:text-sm text-ash leading-relaxed font-body line-clamp-2 sm:line-clamp-none">
+                  Connect spontaneously with people within your radius. Random callsigns, zero public profiles, and zero chat logs.
+                </p>
+              </div>
+
+              {/* Trust Badges - Equipment Certification Tags */}
+              <div className="w-full">
+                <div className="hidden sm:block">
+                  <TrustBadges variant="desktop" />
+                </div>
+                <div className="sm:hidden">
+                  <TrustBadges variant="mobile" />
+                </div>
+              </div>
+
+              {/* Push-to-Talk CTA Button */}
+              <div className="pt-0.5 sm:pt-1">
+                {isSearching ? (
                   <button
                     type="button"
                     onClick={leave}
-                    className="flex items-center justify-center gap-1 px-2.5 sm:px-3.5 py-2 sm:py-2.5 rounded-xl bg-white/5 hover:bg-rose-500/20 text-gray-300 hover:text-rose-300 border border-white/10 font-semibold text-xs sm:text-sm transition-all"
-                    title="Exit to home"
+                    className="w-full py-3 px-4 rounded-xl border border-line bg-surface hover:bg-surface-raised text-paper font-display font-semibold text-xs sm:text-sm transition-all flex items-center justify-center gap-2 shadow-sm"
                   >
-                    <LogOut className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                    <span className="hidden xs:inline sm:inline">Home</span>
+                    <span className="w-2 h-2 rounded-full bg-signal animate-ping" />
+                    <span>Searching ({radiusKm} km) · Cancel [Esc]</span>
                   </button>
+                ) : chatState === "PARTNER_SKIPPED" ? (
+                  <div className="flex items-center gap-2 w-full">
+                    <button
+                      type="button"
+                      onClick={leave}
+                      className="px-3.5 py-3 rounded-xl border border-line bg-surface hover:bg-surface-raised text-ash hover:text-paper font-display text-xs transition-colors"
+                    >
+                      <LogOut className="w-4 h-4" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleStartChat}
+                      className="btn-ptt flex-1 py-3 px-4 rounded-xl font-display font-bold text-xs sm:text-sm tracking-wide flex items-center justify-center gap-2 shadow-lg"
+                    >
+                      <RotateCcw className="w-4 h-4" />
+                      <span>Match Next Peer ({radiusKm} km)</span>
+                    </button>
+                  </div>
+                ) : (
                   <button
                     type="button"
                     onClick={handleStartChat}
-                    className="flex items-center justify-center gap-1.5 px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl bg-teal-500 hover:bg-teal-400 text-gray-950 font-bold text-xs sm:text-sm shadow-lg shadow-teal-500/20 transition-all hover:scale-[1.02] active:scale-[0.98]"
-                    title="Find next partner"
+                    className="btn-ptt w-full py-3 sm:py-3.5 px-5 rounded-xl font-display font-bold text-xs sm:text-base tracking-wide flex items-center justify-center gap-2 shadow-xl select-none"
                   >
-                    <span>Next</span>
-                    <span className="hidden md:inline-block text-[10px] font-semibold bg-black/20 text-black px-1.5 py-0.5 rounded">
-                      Esc
+                    <Radio className="w-4 h-4" />
+                    <span>Start Matching</span>
+                    <span className="font-mono text-xs opacity-75 font-normal ml-1">
+                      [{radiusKm} km]
                     </span>
                   </button>
-                </div>
-              )}
+                )}
+              </div>
+            </div>
 
-              {/* Center Input Form */}
-              <form onSubmit={handleSend} className="flex-1 flex items-center gap-1.5 sm:gap-2 min-w-0">
-                <input
-                  ref={inputRef}
-                  type="text"
-                  value={inputText}
-                  disabled={chatState !== "MATCHED" || Boolean(partnerLeaveReason)}
-                  onChange={(e) => setInputText(e.target.value)}
-                  placeholder={
-                    chatState === "IDLE"
-                      ? "Start chatting nearby..."
-                      : chatState === "SEARCHING"
-                      ? `Searching for users within ${radiusKm} km...`
-                      : partnerLeaveReason
-                      ? "Partner left. Press Next to match."
-                      : "Type a message (max 500 chars)..."
-                  }
-                  maxLength={500}
-                  className="w-full min-w-0 px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl bg-black/40 border border-white/10 focus:border-teal-400 focus:outline-none text-xs sm:text-sm text-white placeholder-gray-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            {/* RIGHT COLUMN (~60% on Desktop): Signature Radar Dial */}
+            <div className="hidden lg:col-span-7 lg:flex flex-col items-center justify-center order-1 lg:order-2 p-2">
+              <div className="w-full max-w-[480px] p-6 rounded-2xl bg-surface/40 border border-line/60 flex flex-col items-center justify-center shadow-2xl relative">
+                <RadarDial
+                  radiusKm={radiusKm}
+                  onRadiusChange={handleRadiusChange}
+                  state={chatState}
+                  onStartMatching={handleStartChat}
+                  partnerDistanceMeters={partner?.distanceMeters}
+                  partnerDisplayName={partner?.displayName}
+                  isCalibrated={isCalibrated}
                 />
-                <button
-                  type="submit"
-                  disabled={
-                    chatState !== "MATCHED" || !inputText.trim() || Boolean(partnerLeaveReason)
-                  }
-                  className="p-2 sm:p-2.5 rounded-xl bg-teal-500 hover:bg-teal-400 disabled:opacity-30 disabled:hover:bg-teal-500 text-gray-950 transition-all shrink-0 shadow-md"
-                >
-                  <Send className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                </button>
-              </form>
+              </div>
             </div>
           </div>
         )}
@@ -761,4 +389,3 @@ export default function Home() {
     </div>
   );
 }
-

@@ -9,8 +9,8 @@ interface MessageBubbleProps {
 export function MessageBubble({ message }: MessageBubbleProps) {
   if (message.senderId === "system") {
     return (
-      <div className="flex justify-center my-3 animate-fade-in">
-        <div className="px-3.5 py-1.5 rounded-full bg-amber-500/10 border border-amber-500/20 text-xs text-amber-300 font-medium text-center shadow-sm">
+      <div className="flex justify-center my-2.5 animate-fade-in">
+        <div className="px-3 py-1 rounded-md bg-surface border border-line text-xs font-mono text-ash text-center max-w-sm">
           {message.text}
         </div>
       </div>
@@ -21,24 +21,28 @@ export function MessageBubble({ message }: MessageBubbleProps) {
   const timeString = new Date(timestamp).toLocaleTimeString([], {
     hour: "2-digit",
     minute: "2-digit",
+    second: "2-digit",
   });
 
   return (
     <div
-      className={`flex flex-col mb-3 animate-slide-up ${
+      className={`flex flex-col mb-2.5 animate-slide-up ${
         isSelf ? "items-end" : "items-start"
       }`}
     >
       <div
-        className={`max-w-[80%] sm:max-w-[70%] px-4 py-2.5 rounded-2xl text-sm leading-relaxed break-words shadow-md ${
+        className={`max-w-[85%] sm:max-w-[75%] px-3.5 py-2 rounded-xl text-sm leading-relaxed break-words font-body select-text ${
           isSelf
-            ? "bg-gradient-to-r from-indigo-600 to-indigo-500 text-white rounded-br-none"
-            : "bg-white/10 text-gray-100 border border-white/10 rounded-bl-none"
+            ? "bg-signal text-ink font-medium rounded-br-xs shadow-sm"
+            : "bg-surface-raised text-paper border border-line rounded-bl-xs shadow-sm"
         }`}
       >
         {text}
       </div>
-      <span className="text-[10px] text-gray-500 mt-1 px-1">{timeString}</span>
+      <span className="font-mono text-[10px] text-ash/80 mt-1 px-1 tracking-tight">
+        {timeString}
+      </span>
     </div>
   );
 }
+
