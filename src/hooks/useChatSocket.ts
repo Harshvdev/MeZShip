@@ -84,6 +84,28 @@ export function useChatSocket(
 
   const getWsBaseUrl = (path: string) => {
     const cleanPath = path.startsWith("/") ? path : `/${path}`;
+
+    // 1. Explicit WebSocket URL (Production wss:// or Local ws://)
+    if (process.env.NEXT_PUBLIC_WS_URL) {
+      const base = process.env.NEXT_PUBLIC_WS_URL.trim()
+        .replace(/['"]+/g, "")
+        .replace(/localhost/g, "127.0.0.1")
+        .replace(/\/+$/, "");
+      return `${base}${cleanPath}`;
+    }
+
+    // 2. Derive WebSocket URL from Worker HTTP/HTTPS URL
+    if (process.env.NEXT_PUBLIC_WORKER_URL) {
+      const base = process.env.NEXT_PUBLIC_WORKER_URL.trim()
+        .replace(/['"]+/g, "")
+        .replace(/localhost/g, "127.0.0.1")
+        .replace(/^https:\/\//i, "wss://")
+        .replace(/^http:\/\//i, "ws://")
+        .replace(/\/+$/, "");
+      return `${base}${cleanPath}`;
+    }
+
+    // 3. Fallback based on client window location
     if (typeof window !== "undefined") {
       const hostname = window.location.hostname;
       const isLocal =
@@ -93,42 +115,14 @@ export function useChatSocket(
         hostname.startsWith("10.") ||
         /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(hostname);
       if (isLocal) {
-        if (
-          process.env.NEXT_PUBLIC_WS_URL &&
-          (process.env.NEXT_PUBLIC_WS_URL.includes("localhost") ||
-            process.env.NEXT_PUBLIC_WS_URL.includes("127.0.0.1") ||
-            process.env.NEXT_PUBLIC_WS_URL.includes("8787"))
-        ) {
-          const base = process.env.NEXT_PUBLIC_WS_URL.trim()
-            .replace(/['"]+/g, "")
-            .replace(/localhost/g, "127.0.0.1")
-            .replace(/\/+$/, "");
-          return `${base}${cleanPath}`;
-        }
         const resolvedHost = hostname === "localhost" ? "127.0.0.1" : hostname;
         return `ws://${resolvedHost}:8787${cleanPath}`;
       }
-    }
-    if (process.env.NEXT_PUBLIC_WS_URL) {
-      const base = process.env.NEXT_PUBLIC_WS_URL.trim()
-        .replace(/['"]+/g, "")
-        .replace(/localhost/g, "127.0.0.1")
-        .replace(/\/+$/, "");
-      return `${base}${cleanPath}`;
-    }
-    if (process.env.NEXT_PUBLIC_WORKER_URL) {
-      const wsBase = process.env.NEXT_PUBLIC_WORKER_URL.trim()
-        .replace(/['"]+/g, "")
-        .replace(/localhost/g, "127.0.0.1")
-        .replace(/^http/, "ws")
-        .replace(/\/+$/, "");
-      return `${wsBase}${cleanPath}`;
-    }
-    if (typeof window !== "undefined") {
       const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
       const host = window.location.host.replace(/^localhost(?=:|$)/, "127.0.0.1");
       return `${protocol}//${host}${cleanPath}`;
     }
+
     return `ws://127.0.0.1:8787${cleanPath}`;
   };
 
