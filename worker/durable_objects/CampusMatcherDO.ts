@@ -119,8 +119,14 @@ export class CampusMatcherDO extends DurableObject<Env> {
         })
       );
 
-      // Attempt matching immediately
-      this.tryMatch(userId);
+      // Attempt matching on the next microtask so the 101 handshake completes first
+      queueMicrotask(() => {
+        try {
+          this.tryMatch(userId);
+        } catch (e) {
+          console.error("Match error in queueMicrotask:", e);
+        }
+      });
 
       return new Response(null, { status: 101, webSocket: client });
     }
