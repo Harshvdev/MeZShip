@@ -8,9 +8,11 @@ import type { ChatMessage, PartnerInfo } from "@/hooks/useChatSocket";
 interface ChatWindowProps {
   partner: PartnerInfo | null;
   messages: ChatMessage[];
+  currentUserId?: string;
   partnerLeaveReason?: "skip" | "leave" | "disconnect" | null;
   isPartnerTyping?: boolean;
   onTypingChange?: (isTyping: boolean) => void;
+  onToggleReaction?: (messageId: string, emoji: string) => void;
   onSendMessage: (text: string) => void;
   onSkip: () => void;
   onLeave: () => void;
@@ -21,9 +23,11 @@ interface ChatWindowProps {
 export function ChatWindow({
   partner,
   messages,
+  currentUserId,
   partnerLeaveReason,
   isPartnerTyping = false,
   onTypingChange,
+  onToggleReaction,
   onSendMessage,
   onSkip,
   onLeave,
@@ -182,7 +186,7 @@ export function ChatWindow({
       )}
 
       {/* Message Stream */}
-      <div className="flex-1 p-3 sm:p-4 overflow-y-auto space-y-2">
+      <div className="flex-1 p-3 sm:p-4 pt-4 sm:pt-6 overflow-y-auto space-y-2">
         {messages.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center text-center p-4 text-ash font-mono text-xs my-auto">
             <div className="w-10 h-10 rounded-full bg-signal/10 border border-signal/20 flex items-center justify-center text-signal mb-2">
@@ -194,7 +198,14 @@ export function ChatWindow({
             </p>
           </div>
         ) : (
-          messages.map((msg) => <MessageBubble key={msg.id} message={msg} />)
+          messages.map((msg) => (
+            <MessageBubble
+              key={msg.id}
+              message={msg}
+              currentUserId={currentUserId}
+              onToggleReaction={onToggleReaction}
+            />
+          ))
         )}
 
         {/* Live Partner Typing Indicator Bubble */}

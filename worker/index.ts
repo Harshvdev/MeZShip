@@ -79,36 +79,41 @@ export default {
     // 1. WebSocket Upgrade Routing
     // --------------------------------------------------------------------------
     if (request.headers.get("Upgrade") === "websocket") {
-      const authHeader = request.headers.get("Authorization") || url.searchParams.get("token");
-      const authUser = await verifySupabaseToken(authHeader, env);
+      try {
+        const authHeader = request.headers.get("Authorization") || url.searchParams.get("token");
+        const authUser = await verifySupabaseToken(authHeader, env);
 
-      if (!authUser) {
-        return new Response("Unauthorized", { status: 401 });
+        if (!authUser) {
+          return new Response("Unauthorized", { status: 401 });
+        }
+
+        // Fast cached ban check before allowing WebSocket connections
+        const banStatus = await checkUserBanCached(authUser.userId, env);
+        if (banStatus.isBanned) {
+          return new Response("Account is currently suspended", { status: 403 });
+        }
+
+        if (url.pathname === "/ws/queue") {
+          // Route to singleton CampusMatcherDO
+          const matcherId = env.CAMPUS_MATCHER.idFromName("global_campus_matcher");
+          const matcher = env.CAMPUS_MATCHER.get(matcherId);
+          return matcher.fetch(request);
+        }
+
+        if (url.pathname.startsWith("/ws/room/")) {
+          const matchId = url.pathname.replace("/ws/room/", "");
+          if (!matchId) return new Response("Missing matchId", { status: 400 });
+
+          const roomId = env.MATCH_ROOM.idFromName(matchId);
+          const room = env.MATCH_ROOM.get(roomId);
+          return room.fetch(request);
+        }
+
+        return new Response("Invalid WebSocket endpoint", { status: 404 });
+      } catch (err) {
+        console.error("Worker WebSocket upgrade error:", err);
+        return new Response("WebSocket internal error", { status: 500 });
       }
-
-      // Fast cached ban check before allowing WebSocket connections
-      const banStatus = await checkUserBanCached(authUser.userId, env);
-      if (banStatus.isBanned) {
-        return new Response("Account is currently suspended", { status: 403 });
-      }
-
-      if (url.pathname === "/ws/queue") {
-        // Route to singleton CampusMatcherDO
-        const matcherId = env.CAMPUS_MATCHER.idFromName("global_campus_matcher");
-        const matcher = env.CAMPUS_MATCHER.get(matcherId);
-        return matcher.fetch(request);
-      }
-
-      if (url.pathname.startsWith("/ws/room/")) {
-        const matchId = url.pathname.replace("/ws/room/", "");
-        if (!matchId) return new Response("Missing matchId", { status: 400 });
-
-        const roomId = env.MATCH_ROOM.idFromName(matchId);
-        const room = env.MATCH_ROOM.get(roomId);
-        return room.fetch(request);
-      }
-
-      return new Response("Invalid WebSocket endpoint", { status: 404 });
     }
 
     // --------------------------------------------------------------------------

@@ -82,14 +82,20 @@ export class MatchRoomDO extends DurableObject<Env> {
         })
       );
 
-      // If both participants are connected, broadcast connected notification
-      const activeSockets = this.ctx.getWebSockets();
-      if (activeSockets.length >= 2) {
-        this.broadcast({
-          type: "partner_connected",
-          message: "You are now chatting! Say hello.",
-        });
-      }
+      // If both participants are connected, broadcast connected notification on next microtask
+      queueMicrotask(() => {
+        try {
+          const activeSockets = this.ctx.getWebSockets();
+          if (activeSockets.length >= 2) {
+            this.broadcast({
+              type: "partner_connected",
+              message: "You are now chatting! Say hello.",
+            });
+          }
+        } catch (e) {
+          console.error("Partner connected broadcast error:", e);
+        }
+      });
 
       return new Response(null, { status: 101, webSocket: client });
     }
@@ -219,6 +225,33 @@ export class MatchRoomDO extends DurableObject<Env> {
             );
           } catch (e) {
             console.error("Ack send error:", e);
+          }
+        }
+      } else if (data.type === "reaction") {
+        const messageId = String(data.messageId || "").trim();
+        const emoji = String(data.emoji || "").trim();
+        if (!messageId || !emoji) return;
+
+        const payload = JSON.stringify({
+          type: "reaction",
+          messageId,
+          emoji,
+          senderId,
+        });
+
+        const activeSockets = this.ctx.getWebSockets();
+        for (const socket of activeSockets) {
+          const targetAttachment = socket.deserializeAttachment() as SocketAttachment | null;
+          const isCurrentSocket = currentSocketId
+            ? targetAttachment?.socketId === currentSocketId
+            : socket === ws;
+
+          if (!isCurrentSocket) {
+            try {
+              socket.send(payload);
+            } catch (e) {
+              console.error("Reaction forwarding error:", e);
+            }
           }
         }
       } else if (data.type === "typing_start") {

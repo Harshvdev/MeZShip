@@ -20,6 +20,29 @@ export interface ChatMessage {
   timestamp: number;
   status?: "sending" | "sent" | "failed";
   clientMsgId?: string;
+  reactions?: Record<string, string[]>; // emoji -> array of userIds
+}
+
+function toggleEmojiInReactions(
+  reactions: Record<string, string[]> | undefined,
+  emoji: string,
+  userId: string
+): Record<string, string[]> {
+  const current = { ...(reactions || {}) };
+  const userList = current[emoji] ? [...current[emoji]] : [];
+  const idx = userList.indexOf(userId);
+  if (idx !== -1) {
+    userList.splice(idx, 1);
+  } else {
+    userList.push(userId);
+  }
+
+  if (userList.length === 0) {
+    delete current[emoji];
+  } else {
+    current[emoji] = userList;
+  }
+  return current;
 }
 
 export interface PartnerInfo {
@@ -305,6 +328,17 @@ export function useChatSocket(
                   : msg
               )
             );
+          } else if (data.type === "reaction") {
+            const { messageId, emoji, senderId } = data;
+            setMessages((prev) =>
+              prev.map((msg) => {
+                if (msg.id === messageId || msg.clientMsgId === messageId) {
+                  const nextReactions = toggleEmojiInReactions(msg.reactions, emoji, senderId);
+                  return { ...msg, reactions: nextReactions };
+                }
+                return msg;
+              })
+            );
           } else if (data.type === "typing_start") {
             setIsPartnerTyping(true);
             if (partnerTypingTimeoutRef.current) clearTimeout(partnerTypingTimeoutRef.current);
@@ -388,7 +422,10 @@ export function useChatSocket(
 
   const startMatching = useCallback(
     (radius = 5000) => {
-      if (!userId) return;
+      if (!userId || !token) {
+        setStatusMessage("Authenticating session...");
+        return;
+      }
       closeCurrentSocket();
 
       currentRadiusRef.current = radius;
@@ -403,7 +440,7 @@ export function useChatSocket(
       const wsUrl = `${getWsBaseUrl("/ws/queue")}?userId=${encodeURIComponent(
         userId
       )}&displayName=${encodeURIComponent(
-        displayName || ""
+        displayName || "Anonymous"
       )}&lat=${userLat || 0}&lng=${userLng || 0}&radius=${radius}&token=${encodeURIComponent(token || "")}`;
 
       const ws = new WebSocket(wsUrl);
@@ -657,6 +694,39 @@ export function useChatSocket(
     [token]
   );
 
+  // Toggle a reaction emoji on a message
+  const toggleReaction = useCallback(
+    (messageId: string, emoji: string) => {
+      if (!userId || !wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
+        return;
+      }
+
+      // Optimistically update local message state
+      setMessages((prev) =>
+        prev.map((msg) => {
+          if (msg.id === messageId || msg.clientMsgId === messageId) {
+            const nextReactions = toggleEmojiInReactions(msg.reactions, emoji, userId);
+            return { ...msg, reactions: nextReactions };
+          }
+          return msg;
+        })
+      );
+
+      try {
+        wsRef.current.send(
+          JSON.stringify({
+            type: "reaction",
+            messageId,
+            emoji,
+          })
+        );
+      } catch (err) {
+        console.error("Failed to send reaction:", err);
+      }
+    },
+    [userId]
+  );
+
   useEffect(() => {
     return () => {
       closeCurrentSocket();
@@ -677,6 +747,7 @@ export function useChatSocket(
     startMatching,
     sendMessage,
     sendTyping,
+    toggleReaction,
     skip,
     leave,
     blockPartner,

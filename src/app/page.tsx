@@ -61,6 +61,7 @@ export default function Home() {
     startMatching,
     sendMessage,
     sendTyping,
+    toggleReaction,
     skip,
     leave,
     blockPartner,
@@ -211,9 +212,11 @@ export default function Home() {
             <ChatWindow
               partner={partner}
               messages={messages}
+              currentUserId={profile?.user_id}
               partnerLeaveReason={partnerLeaveReason}
               isPartnerTyping={isPartnerTyping}
               onTypingChange={sendTyping}
+              onToggleReaction={toggleReaction}
               onSendMessage={sendMessage}
               onSkip={skip}
               onLeave={leave}
