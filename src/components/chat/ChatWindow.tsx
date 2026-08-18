@@ -9,6 +9,8 @@ interface ChatWindowProps {
   partner: PartnerInfo | null;
   messages: ChatMessage[];
   partnerLeaveReason?: "skip" | "leave" | "disconnect" | null;
+  isPartnerTyping?: boolean;
+  onTypingChange?: (isTyping: boolean) => void;
   onSendMessage: (text: string) => void;
   onSkip: () => void;
   onLeave: () => void;
@@ -20,6 +22,8 @@ export function ChatWindow({
   partner,
   messages,
   partnerLeaveReason,
+  isPartnerTyping = false,
+  onTypingChange,
   onSendMessage,
   onSkip,
   onLeave,
@@ -46,15 +50,24 @@ export function ChatWindow({
 
   useEffect(() => {
     scrollToBottom();
-  }, [messages]);
+  }, [messages, isPartnerTyping]);
 
   useEffect(() => {
     inputRef.current?.focus();
   }, []);
 
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const text = e.target.value;
+    setInputText(text);
+    if (onTypingChange && !partnerLeaveReason) {
+      onTypingChange(text.length > 0);
+    }
+  };
+
   const handleSend = (e: React.FormEvent) => {
     e.preventDefault();
     if (!inputText.trim() || partnerLeaveReason) return;
+    if (onTypingChange) onTypingChange(false);
     onSendMessage(inputText);
     setInputText("");
   };
@@ -183,8 +196,31 @@ export function ChatWindow({
         ) : (
           messages.map((msg) => <MessageBubble key={msg.id} message={msg} />)
         )}
+
+        {/* Live Partner Typing Indicator Bubble */}
+        {isPartnerTyping && (
+          <div className="flex flex-col mb-2.5 items-start animate-slide-up">
+            <div className="bg-surface-raised border border-line rounded-xl rounded-bl-xs px-3.5 py-2.5 shadow-sm flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-signal animate-bounce [animation-delay:-0.3s]" />
+              <span className="w-1.5 h-1.5 rounded-full bg-signal animate-bounce [animation-delay:-0.15s]" />
+              <span className="w-1.5 h-1.5 rounded-full bg-signal animate-bounce" />
+            </div>
+            <span className="font-mono text-[10px] text-ash/80 mt-1 px-1 tracking-tight">
+              {partner?.displayName || "Partner"} is typing...
+            </span>
+          </div>
+        )}
+
         <div ref={messagesEndRef} />
       </div>
+
+      {/* Subtle Typing Status Bar above Composer */}
+      {isPartnerTyping && (
+        <div className="px-3.5 py-1 bg-surface-raised/90 border-t border-line text-[11px] font-mono text-signal flex items-center gap-1.5 animate-fade-in">
+          <span className="w-1.5 h-1.5 rounded-full bg-signal animate-pulse" />
+          <span>{partner?.displayName || "Partner"} is typing...</span>
+        </div>
+      )}
 
       {/* Bottom Control Bar: Leave + Skip on bottom left, Composer in center, Send on right */}
       <div className="px-2.5 sm:px-3 py-2 bg-surface-raised border-t border-line flex items-center gap-1.5 sm:gap-2">
@@ -220,7 +256,8 @@ export function ChatWindow({
             type="text"
             value={inputText}
             disabled={isPartnerLeft}
-            onChange={(e) => setInputText(e.target.value)}
+            onChange={handleInputChange}
+            onBlur={() => onTypingChange?.(false)}
             placeholder={
               isPartnerLeft
                 ? "Partner left. Click 'Skip' or 'Leave'..."

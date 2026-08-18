@@ -17,7 +17,7 @@ export function MessageBubble({ message }: MessageBubbleProps) {
     );
   }
 
-  const { isSelf, text, timestamp } = message;
+  const { isSelf, text, timestamp, status } = message;
   const timeString = new Date(timestamp).toLocaleTimeString([], {
     hour: "2-digit",
     minute: "2-digit",
@@ -39,9 +39,21 @@ export function MessageBubble({ message }: MessageBubbleProps) {
       >
         {text}
       </div>
-      <span className="font-mono text-[10px] text-ash/80 mt-1 px-1 tracking-tight">
-        {timeString}
-      </span>
+      <div className="flex items-center gap-1.5 font-mono text-[10px] text-ash/80 mt-1 px-1 tracking-tight">
+        <span>{timeString}</span>
+        {isSelf && (
+          <>
+            <span className="opacity-40">·</span>
+            {status === "sending" ? (
+              <span className="text-signal/90 animate-pulse font-semibold">Sending...</span>
+            ) : status === "failed" ? (
+              <span className="text-alert font-semibold">Failed</span>
+            ) : (
+              <span className="text-ash/70">Sent</span>
+            )}
+          </>
+        )}
+      </div>
     </div>
   );
 }

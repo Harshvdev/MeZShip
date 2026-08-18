@@ -56,9 +56,11 @@ export default function Home() {
     statusMessage,
     partnerLeaveReason,
     onlineCount,
+    isPartnerTyping,
     setOnlineCount,
     startMatching,
     sendMessage,
+    sendTyping,
     skip,
     leave,
     blockPartner,
@@ -210,6 +212,8 @@ export default function Home() {
               partner={partner}
               messages={messages}
               partnerLeaveReason={partnerLeaveReason}
+              isPartnerTyping={isPartnerTyping}
+              onTypingChange={sendTyping}
               onSendMessage={sendMessage}
               onSkip={skip}
               onLeave={leave}

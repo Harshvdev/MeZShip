@@ -14,6 +14,7 @@ interface MatchContext {
 }
 
 interface SocketAttachment {
+  socketId: string;
   userId: string;
   displayName: string;
   matchId: string;
@@ -50,10 +51,11 @@ export class MatchRoomDO extends DurableObject<Env> {
         return new Response("Missing parameters", { status: 400 });
       }
 
-      // Persist attachment on server WebSocket for hibernation resilience
-      const attachment: SocketAttachment = { userId, displayName, matchId };
+      // Persist unique socketId in attachment on server WebSocket for hibernation resilience
+      const socketId = `ws_${crypto.randomUUID()}`;
+      const attachment: SocketAttachment = { socketId, userId, displayName, matchId };
       server.serializeAttachment(attachment);
-      this.ctx.acceptWebSocket(server, [userId]);
+      this.ctx.acceptWebSocket(server, [userId, socketId]);
 
       let matchCtx = await this.getMatchContext();
       if (!matchCtx) {
@@ -143,12 +145,10 @@ export class MatchRoomDO extends DurableObject<Env> {
         return;
       }
 
+      const attachment = ws.deserializeAttachment() as SocketAttachment | null;
+      const currentSocketId = attachment?.socketId;
       const senderTags = this.ctx.getTags(ws);
-      let senderId = senderTags[0];
-      if (!senderId) {
-        const attachment = ws.deserializeAttachment() as SocketAttachment | null;
-        senderId = attachment?.userId || "";
-      }
+      const senderId = senderTags[0] || attachment?.userId || "";
 
       if (!senderId) return;
 
@@ -178,23 +178,83 @@ export class MatchRoomDO extends DurableObject<Env> {
           return;
         }
 
-        // Forward to all other participants across hibernations
+        const msgId = `msg_${crypto.randomUUID()}`;
+        const now = Date.now();
+
+        // Forward to other participant(s)
         const payload = JSON.stringify({
           type: "message",
-          id: `msg_${crypto.randomUUID()}`,
+          id: msgId,
           senderId,
           text,
-          timestamp: Date.now(),
+          timestamp: now,
         });
 
         const activeSockets = this.ctx.getWebSockets();
         for (const socket of activeSockets) {
-          if (socket !== ws) {
+          const targetAttachment = socket.deserializeAttachment() as SocketAttachment | null;
+          const isCurrentSocket = currentSocketId
+            ? targetAttachment?.socketId === currentSocketId
+            : socket === ws;
+
+          if (!isCurrentSocket) {
             try {
               socket.send(payload);
             } catch (e) {
               console.error("Message forwarding error:", e);
             }
+          }
+        }
+
+        // Always acknowledge receipt directly to sender socket
+        if (data.clientMsgId) {
+          try {
+            ws.send(
+              JSON.stringify({
+                type: "message_ack",
+                clientMsgId: data.clientMsgId,
+                id: msgId,
+                timestamp: now,
+              })
+            );
+          } catch (e) {
+            console.error("Ack send error:", e);
+          }
+        }
+      } else if (data.type === "typing_start") {
+        const payload = JSON.stringify({
+          type: "typing_start",
+          senderId,
+        });
+        const activeSockets = this.ctx.getWebSockets();
+        for (const socket of activeSockets) {
+          const targetAttachment = socket.deserializeAttachment() as SocketAttachment | null;
+          const isCurrentSocket = currentSocketId
+            ? targetAttachment?.socketId === currentSocketId
+            : socket === ws;
+
+          if (!isCurrentSocket) {
+            try {
+              socket.send(payload);
+            } catch {}
+          }
+        }
+      } else if (data.type === "typing_stop") {
+        const payload = JSON.stringify({
+          type: "typing_stop",
+          senderId,
+        });
+        const activeSockets = this.ctx.getWebSockets();
+        for (const socket of activeSockets) {
+          const targetAttachment = socket.deserializeAttachment() as SocketAttachment | null;
+          const isCurrentSocket = currentSocketId
+            ? targetAttachment?.socketId === currentSocketId
+            : socket === ws;
+
+          if (!isCurrentSocket) {
+            try {
+              socket.send(payload);
+            } catch {}
           }
         }
       } else if (data.type === "skip") {
@@ -240,9 +300,16 @@ export class MatchRoomDO extends DurableObject<Env> {
     });
 
     // Notify other connected sockets
+    const sourceAttachment = sourceWs.deserializeAttachment() as SocketAttachment | null;
+    const sourceSocketId = sourceAttachment?.socketId;
     const activeSockets = this.ctx.getWebSockets();
     for (const socket of activeSockets) {
-      if (socket !== sourceWs) {
+      const targetAttachment = socket.deserializeAttachment() as SocketAttachment | null;
+      const isSource = sourceSocketId
+        ? targetAttachment?.socketId === sourceSocketId
+        : socket === sourceWs;
+
+      if (!isSource) {
         try {
           socket.send(payload);
         } catch (e) {
