@@ -47,12 +47,17 @@ async function checkUserBanCached(userId: string, env: Env): Promise<{ isBanned:
 
   try {
     const prisma = getPrisma(env);
-    const activeBan = await prisma.userBan.findFirst({
+    const dbPromise = prisma.userBan.findFirst({
       where: {
         user_id: userId,
         OR: [{ expires_at: null }, { expires_at: { gt: new Date() } }],
       },
     });
+    const timeoutPromise = new Promise<null>((_, reject) =>
+      setTimeout(() => reject(new Error("DB ban check timeout")), 2000)
+    );
+
+    const activeBan = (await Promise.race([dbPromise, timeoutPromise])) as any;
 
     const isBanned = Boolean(activeBan);
     banCache.set(userId, {
@@ -62,7 +67,7 @@ async function checkUserBanCached(userId: string, env: Env): Promise<{ isBanned:
     });
     return { isBanned, ban: activeBan || null };
   } catch (err) {
-    console.error("Error checking user ban:", err);
+    console.warn("User ban check skipped/failed:", err);
     return { isBanned: cached ? cached.isBanned : false, ban: cached ? cached.ban : null };
   }
 }
@@ -97,7 +102,7 @@ export default {
           // Route to singleton CampusMatcherDO
           const matcherId = env.CAMPUS_MATCHER.idFromName("global_campus_matcher");
           const matcher = env.CAMPUS_MATCHER.get(matcherId);
-          return matcher.fetch(request);
+          return await matcher.fetch(request);
         }
 
         if (url.pathname.startsWith("/ws/room/")) {
@@ -106,7 +111,7 @@ export default {
 
           const roomId = env.MATCH_ROOM.idFromName(matchId);
           const room = env.MATCH_ROOM.get(roomId);
-          return room.fetch(request);
+          return await room.fetch(request);
         }
 
         return new Response("Invalid WebSocket endpoint", { status: 404 });

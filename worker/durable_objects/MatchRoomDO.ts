@@ -74,17 +74,16 @@ export class MatchRoomDO extends DurableObject<Env> {
         await this.ctx.storage.put("matchContext", matchCtx);
       }
 
-      server.send(
-        JSON.stringify({
-          type: "chat_ready",
-          matchId,
-          userId,
-        })
-      );
-
-      // If both participants are connected, broadcast connected notification on next microtask
+      // If both participants are connected, broadcast connected notification on next microtask after 101 handshake completes
       queueMicrotask(() => {
         try {
+          server.send(
+            JSON.stringify({
+              type: "chat_ready",
+              matchId,
+              userId,
+            })
+          );
           const activeSockets = this.ctx.getWebSockets();
           if (activeSockets.length >= 2) {
             this.broadcast({

@@ -101,30 +101,35 @@ export function useChatSocket(
         ) {
           const base = process.env.NEXT_PUBLIC_WS_URL.trim()
             .replace(/['"]+/g, "")
+            .replace(/localhost/g, "127.0.0.1")
             .replace(/\/+$/, "");
           return `${base}${cleanPath}`;
         }
-        return `ws://${hostname}:8787${cleanPath}`;
+        const resolvedHost = hostname === "localhost" ? "127.0.0.1" : hostname;
+        return `ws://${resolvedHost}:8787${cleanPath}`;
       }
     }
     if (process.env.NEXT_PUBLIC_WS_URL) {
       const base = process.env.NEXT_PUBLIC_WS_URL.trim()
         .replace(/['"]+/g, "")
+        .replace(/localhost/g, "127.0.0.1")
         .replace(/\/+$/, "");
       return `${base}${cleanPath}`;
     }
     if (process.env.NEXT_PUBLIC_WORKER_URL) {
       const wsBase = process.env.NEXT_PUBLIC_WORKER_URL.trim()
         .replace(/['"]+/g, "")
+        .replace(/localhost/g, "127.0.0.1")
         .replace(/^http/, "ws")
         .replace(/\/+$/, "");
       return `${wsBase}${cleanPath}`;
     }
     if (typeof window !== "undefined") {
       const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-      return `${protocol}//${window.location.host}${cleanPath}`;
+      const host = window.location.host.replace(/^localhost(?=:|$)/, "127.0.0.1");
+      return `${protocol}//${host}${cleanPath}`;
     }
-    return `ws://localhost:8787${cleanPath}`;
+    return `ws://127.0.0.1:8787${cleanPath}`;
   };
 
   const closeCurrentSocket = useCallback(() => {

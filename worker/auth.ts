@@ -45,7 +45,7 @@ export async function verifySupabaseToken(
 
     // 1. Asymmetric verification (RS256 / ES256 via JWKS)
     if (alg === "RS256" || alg === "ES256") {
-      const jwksUrl =
+      let jwksUrl =
         env.SUPABASE_JWKS_URL ||
         (env.SUPABASE_URL
           ? `${env.SUPABASE_URL}/auth/v1/.well-known/jwks.json`
@@ -53,16 +53,32 @@ export async function verifySupabaseToken(
           ? `${env.NEXT_PUBLIC_SUPABASE_URL}/auth/v1/.well-known/jwks.json`
           : null);
 
+      if (!jwksUrl) {
+        try {
+          const decoded = decodeJwt(token);
+          if (decoded && typeof decoded.iss === "string" && decoded.iss.startsWith("https://")) {
+            const iss = decoded.iss.replace(/\/+$/, "");
+            jwksUrl = iss.endsWith("/auth/v1")
+              ? `${iss}/.well-known/jwks.json`
+              : `${iss}/auth/v1/.well-known/jwks.json`;
+          }
+        } catch {}
+      }
+
       if (jwksUrl) {
         try {
           const JWKS = getJWKS(jwksUrl);
-          const { payload } = await jwtVerify(token, JWKS, {
+          const verifyPromise = jwtVerify(token, JWKS, {
             algorithms: ["ES256", "RS256"],
           });
-          if (payload.sub) {
+          const timeoutPromise = new Promise<null>((_, reject) =>
+            setTimeout(() => reject(new Error("JWKS verify timeout")), 2500)
+          );
+          const result = (await Promise.race([verifyPromise, timeoutPromise])) as any;
+          if (result && result.payload && result.payload.sub) {
             return {
-              userId: payload.sub,
-              email: typeof payload.email === "string" ? payload.email : undefined,
+              userId: result.payload.sub,
+              email: typeof result.payload.email === "string" ? result.payload.email : undefined,
             };
           }
         } catch (jwksErr) {

@@ -109,19 +109,18 @@ export class CampusMatcherDO extends DurableObject<Env> {
       const totalOnline = Math.max(0, this.presence.size, waitingEntries.length);
       const otherOnline = Math.max(0, totalOnline - 1);
 
-      server.send(
-        JSON.stringify({
-          type: "queue_joined",
-          message: "Searching for a compatible nearby match...",
-          queuedAt: waitingUser.queuedAt,
-          queueCount: Math.max(0, waitingEntries.length - 1),
-          onlineCount: otherOnline,
-        })
-      );
-
-      // Attempt matching on the next microtask so the 101 handshake completes first
+      // Deliver queue welcome and attempt matching on the next microtask after 101 handshake completes
       queueMicrotask(() => {
         try {
+          server.send(
+            JSON.stringify({
+              type: "queue_joined",
+              message: "Searching for a compatible nearby match...",
+              queuedAt: waitingUser.queuedAt,
+              queueCount: Math.max(0, waitingEntries.length - 1),
+              onlineCount: otherOnline,
+            })
+          );
           this.tryMatch(userId);
         } catch (e) {
           console.error("Match error in queueMicrotask:", e);
