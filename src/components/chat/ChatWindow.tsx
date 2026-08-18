@@ -188,7 +188,7 @@ export function ChatWindow({
       {/* Message Stream */}
       <div className="flex-1 p-3 sm:p-4 pt-4 sm:pt-6 overflow-y-auto space-y-2">
         {messages.length === 0 ? (
-          <div className="h-full flex flex-col items-center justify-center text-center p-4 text-ash font-mono text-xs my-auto">
+          <div className="flex-1 min-h-[160px] py-8 flex flex-col items-center justify-center text-center p-4 text-ash font-mono text-xs my-auto">
             <div className="w-10 h-10 rounded-full bg-signal/10 border border-signal/20 flex items-center justify-center text-signal mb-2">
               <Radio className="w-5 h-5 animate-pulse" />
             </div>
@@ -268,6 +268,12 @@ export function ChatWindow({
             value={inputText}
             disabled={isPartnerLeft}
             onChange={handleInputChange}
+            onInput={(e) => {
+              const val = (e.target as HTMLInputElement).value;
+              if (onTypingChange && !partnerLeaveReason) {
+                onTypingChange(val.length > 0);
+              }
+            }}
             onBlur={() => onTypingChange?.(false)}
             placeholder={
               isPartnerLeft

@@ -27,5 +27,9 @@
     "REPORT_THRESHOLD_24H": "6",
     "REPORT_THRESHOLD_7D": "11",
     "REPORT_THRESHOLD_PERMANENT": "20"
+  },
+  "dev": {
+    "ip": "0.0.0.0",
+    "port": 8787
   }
 }

@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "next dev",
+    "dev:all": "bun run worker:dev & bun run dev",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",

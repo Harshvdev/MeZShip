@@ -74,17 +74,16 @@ export class MatchRoomDO extends DurableObject<Env> {
         await this.ctx.storage.put("matchContext", matchCtx);
       }
 
-      server.send(
-        JSON.stringify({
-          type: "chat_ready",
-          matchId,
-          userId,
-        })
-      );
-
-      // If both participants are connected, broadcast connected notification on next microtask
+      // If both participants are connected, broadcast connected notification on next microtask after 101 handshake completes
       queueMicrotask(() => {
         try {
+          server.send(
+            JSON.stringify({
+              type: "chat_ready",
+              matchId,
+              userId,
+            })
+          );
           const activeSockets = this.ctx.getWebSockets();
           if (activeSockets.length >= 2) {
             this.broadcast({
@@ -254,40 +253,27 @@ export class MatchRoomDO extends DurableObject<Env> {
             }
           }
         }
-      } else if (data.type === "typing_start") {
+      } else if (data.type === "typing_start" || data.type === "typing_stop") {
         const payload = JSON.stringify({
-          type: "typing_start",
+          type: data.type,
           senderId,
         });
         const activeSockets = this.ctx.getWebSockets();
         for (const socket of activeSockets) {
+          const targetTags = this.ctx.getTags(socket);
           const targetAttachment = socket.deserializeAttachment() as SocketAttachment | null;
-          const isCurrentSocket = currentSocketId
-            ? targetAttachment?.socketId === currentSocketId
-            : socket === ws;
+          const targetSocketId = targetTags[1] || targetAttachment?.socketId;
+
+          const isCurrentSocket =
+            socket === ws ||
+            (currentSocketId && targetSocketId && targetSocketId === currentSocketId);
 
           if (!isCurrentSocket) {
             try {
               socket.send(payload);
-            } catch {}
-          }
-        }
-      } else if (data.type === "typing_stop") {
-        const payload = JSON.stringify({
-          type: "typing_stop",
-          senderId,
-        });
-        const activeSockets = this.ctx.getWebSockets();
-        for (const socket of activeSockets) {
-          const targetAttachment = socket.deserializeAttachment() as SocketAttachment | null;
-          const isCurrentSocket = currentSocketId
-            ? targetAttachment?.socketId === currentSocketId
-            : socket === ws;
-
-          if (!isCurrentSocket) {
-            try {
-              socket.send(payload);
-            } catch {}
+            } catch (e) {
+              console.error("Typing forwarding error:", e);
+            }
           }
         }
       } else if (data.type === "skip") {
