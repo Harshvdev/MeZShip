@@ -10,7 +10,7 @@ import {
   getCampusCenter,
 } from "./lib/geo";
 
-export { RadarMatcherDO, MatchRoomDO };
+export { RadarMatcherDO, MatchRoomDO, RadarMatcherDO as CampusMatcherDO };
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
