@@ -7,8 +7,8 @@
   "durable_objects": {
     "bindings": [
       {
-        "name": "CAMPUS_MATCHER",
-        "class_name": "CampusMatcherDO"
+        "name": "RADAR_MATCHER",
+        "class_name": "RadarMatcherDO"
       },
       {
         "name": "MATCH_ROOM",
@@ -19,7 +19,7 @@
   "migrations": [
     {
       "tag": "v1",
-      "new_sqlite_classes": ["CampusMatcherDO", "MatchRoomDO"]
+      "new_sqlite_classes": ["RadarMatcherDO", "MatchRoomDO"]
     }
   ],
   "vars": {

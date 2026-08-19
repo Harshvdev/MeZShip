@@ -1,6 +1,6 @@
 import { verifySupabaseToken } from "./auth";
 import { getPrisma } from "./lib/db";
-import { CampusMatcherDO } from "./durable_objects/CampusMatcherDO";
+import { RadarMatcherDO } from "./durable_objects/RadarMatcherDO";
 import { MatchRoomDO } from "./durable_objects/MatchRoomDO";
 import type { Env } from "./types";
 import { BanType, ReportReason } from "@prisma/client";
@@ -10,7 +10,7 @@ import {
   getCampusCenter,
 } from "./lib/geo";
 
-export { CampusMatcherDO, MatchRoomDO };
+export { RadarMatcherDO, MatchRoomDO };
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
@@ -72,6 +72,12 @@ async function checkUserBanCached(userId: string, env: Env): Promise<{ isBanned:
   }
 }
 
+function getMatcherDO(env: Env) {
+  const matcherNamespace = env.RADAR_MATCHER || env.CAMPUS_MATCHER;
+  const matcherId = matcherNamespace.idFromName("global_radar_matcher");
+  return matcherNamespace.get(matcherId);
+}
+
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     if (request.method === "OPTIONS") {
@@ -99,9 +105,8 @@ export default {
         }
 
         if (url.pathname === "/ws/queue") {
-          // Route to singleton CampusMatcherDO
-          const matcherId = env.CAMPUS_MATCHER.idFromName("global_campus_matcher");
-          const matcher = env.CAMPUS_MATCHER.get(matcherId);
+          // Route to singleton RadarMatcherDO
+          const matcher = getMatcherDO(env);
           return await matcher.fetch(request);
         }
 
@@ -130,8 +135,7 @@ export default {
 
     if (url.pathname === "/api/stats" && request.method === "GET") {
       try {
-        const matcherId = env.CAMPUS_MATCHER.idFromName("global_campus_matcher");
-        const matcher = env.CAMPUS_MATCHER.get(matcherId);
+        const matcher = getMatcherDO(env);
         const statsRes = await matcher.fetch(new Request("http://internal/stats"));
         const stats = await statsRes.json();
         return jsonResponse(stats);
@@ -145,8 +149,7 @@ export default {
         const authHeader = request.headers.get("Authorization");
         const authUser = await verifySupabaseToken(authHeader, env);
         if (authUser) {
-          const matcherId = env.CAMPUS_MATCHER.idFromName("global_campus_matcher");
-          const matcher = env.CAMPUS_MATCHER.get(matcherId);
+          const matcher = getMatcherDO(env);
           await matcher.fetch(
             new Request("http://internal/heartbeat", {
               method: "POST",

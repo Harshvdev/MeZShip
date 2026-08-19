@@ -7,7 +7,7 @@ interface QueueEntry {
   user: WaitingUser;
 }
 
-export class CampusMatcherDO extends DurableObject<Env> {
+export class RadarMatcherDO extends DurableObject<Env> {
   private presence: Map<string, number> = new Map(); // userId -> lastSeen timestamp
   private blockPairs: Set<string> = new Set(); // "blocker:blocked"
   private matchHistory: Map<string, Map<string, number>> = new Map(); // userId -> (partnerId -> timestamp)
@@ -55,20 +55,40 @@ export class CampusMatcherDO extends DurableObject<Env> {
   }
 
   /**
-   * Retrieves active waiting users from WebSockets across DO hibernations
+   * Retrieves active waiting users from WebSockets across DO hibernations.
+   * Strictly deduplicates by userId so each user can have at most ONE entry in the queue.
    */
   private getWaitingEntries(): QueueEntry[] {
     const sockets = this.ctx.getWebSockets();
-    const entries: QueueEntry[] = [];
+    const userEntryMap = new Map<string, QueueEntry>();
+
     for (const ws of sockets) {
       try {
         const user = ws.deserializeAttachment() as WaitingUser | null;
         if (user && user.userId) {
-          entries.push({ ws, user });
+          const existing = userEntryMap.get(user.userId);
+          if (!existing) {
+            userEntryMap.set(user.userId, { ws, user });
+          } else {
+            // If duplicate active socket for same user exists, keep the newest one and evict the older
+            if (user.queuedAt >= existing.user.queuedAt) {
+              try {
+                existing.ws.serializeAttachment(null);
+                existing.ws.close(1000, "Duplicate queue socket evicted");
+              } catch {}
+              userEntryMap.set(user.userId, { ws, user });
+            } else {
+              try {
+                ws.serializeAttachment(null);
+                ws.close(1000, "Duplicate queue socket evicted");
+              } catch {}
+            }
+          }
         }
       } catch {}
     }
-    return entries;
+
+    return Array.from(userEntryMap.values());
   }
 
   async fetch(request: Request): Promise<Response> {
@@ -87,6 +107,15 @@ export class CampusMatcherDO extends DurableObject<Env> {
 
       if (!userId) {
         return new Response("Missing userId", { status: 400 });
+      }
+
+      // Evict any existing WebSockets for this user before accepting new one
+      const existingUserSockets = this.ctx.getWebSockets(userId);
+      for (const oldWs of existingUserSockets) {
+        try {
+          oldWs.serializeAttachment(null);
+          oldWs.close(1000, "Replaced by newer queue connection");
+        } catch {}
       }
 
       const waitingUser: WaitingUser = {
@@ -172,7 +201,7 @@ export class CampusMatcherDO extends DurableObject<Env> {
       return new Response(JSON.stringify({ success: true }));
     }
 
-    return new Response("CampusMatcherDO Active", { status: 200 });
+    return new Response("RadarMatcherDO Active", { status: 200 });
   }
 
   async webSocketMessage(ws: WebSocket, message: string | ArrayBuffer) {
@@ -304,13 +333,20 @@ export class CampusMatcherDO extends DurableObject<Env> {
     // MATCH FOUND!
     const matchId = `match_${crypto.randomUUID()}`;
 
-    // Clear attachments immediately so neither candidate is matched again concurrently
-    try {
-      candidateEntry.ws.serializeAttachment(null);
-    } catch {}
-    try {
-      best.other.ws.serializeAttachment(null);
-    } catch {}
+    // Clear attachments on ALL sockets belonging to both matched users to prevent multiple simultaneous pairings
+    const candidateSockets = this.ctx.getWebSockets(candidateId);
+    for (const ws of candidateSockets) {
+      try {
+        ws.serializeAttachment(null);
+      } catch {}
+    }
+
+    const bestSockets = this.ctx.getWebSockets(best.otherId);
+    for (const ws of bestSockets) {
+      try {
+        ws.serializeAttachment(null);
+      } catch {}
+    }
 
     // Record interaction timestamp for circular tie-breaker memory
     this.recordMatch(candidateId, best.otherId);

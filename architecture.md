@@ -156,7 +156,7 @@ Nothing required for production operation runs on the developer's personal compu
              ┌─────────────────┐        ┌─────────────────────┐
              │ Durable Objects │        │ Supabase             │
              │                 │        │                     │
-             │ CampusMatcherDO │        │ Auth                │
+             │ RadarMatcherDO │        │ Auth                │
              │  (Queues/Match) │        │ Managed PostgreSQL   │
              │        ↓        │        │ Persistent data     │
              │ MatchRoomDO     │        └─────────────────────┘
@@ -178,7 +178,7 @@ Cloudflare provides:
 
 * HTTP/API execution via Cloudflare Worker
 * WebSocket upgrade and session routing
-* Two-tier Durable Objects (`CampusMatcherDO` for matchmaking queues and `MatchRoomDO` for active chats)
+* Two-tier Durable Objects (`RadarMatcherDO` for matchmaking queues and `MatchRoomDO` for active chats)
 
 ---
 
@@ -223,7 +223,7 @@ WebSocket Hibernation API
 
 Two-tier architecture:
 
-1. **`CampusMatcherDO`** (Matchmaking queue & proximity engine):
+1. **`RadarMatcherDO`** (Matchmaking queue & proximity engine):
    * waiting queues
    * in-memory Haversine distance proximity matching based on user search radius ($\le \min(\text{Radius}_A, \text{Radius}_B)$)
    * circular fair matching memory and tie-breaking
@@ -313,7 +313,7 @@ Ban enforcement
 Handle:
 
 ```text
-CampusMatcherDO:
+RadarMatcherDO:
   - Waiting queues
   - In-memory Haversine distance proximity filtering
   - Match formation & handoff
@@ -477,7 +477,7 @@ Browser location permission (or calibrated coordinates)
  ↓
 Temporary current coordinates (lat, lng) + Max Radius (default 5 km)
  ↓
-Cloudflare Worker / CampusMatcherDO
+Cloudflare Worker / RadarMatcherDO
  ↓
 Distance calculation (Haversine formula in-memory)
  ↓
@@ -533,7 +533,7 @@ The selected radius is stored in component state and passed directly to the WebS
 
 ## 14. Matching Queue
 
-Users waiting for a match exist in temporary `CampusMatcherDO` state.
+Users waiting for a match exist in temporary `RadarMatcherDO` state.
 
 Conceptually:
 
@@ -576,10 +576,10 @@ If all other conditions are satisfied:
 A ↔ B
 ```
 
-The `CampusMatcherDO` pairs the two users, generates a `match_id`, and hands the active session off to a dedicated `MatchRoomDO`.
+The `RadarMatcherDO` pairs the two users, generates a `match_id`, and hands the active session off to a dedicated `MatchRoomDO`.
 
 ```text
-WAITING (CampusMatcherDO)
+WAITING (RadarMatcherDO)
    ↓
 MATCHED
    ↓
@@ -722,14 +722,14 @@ Notify partner (partner_skipped event)
       ↓
 Existing WebSocket remains connected (no reconnect/TLS overhead)
       ↓
-Current user returned to CampusMatcherDO waiting queue
+Current user returned to RadarMatcherDO waiting queue
       ↓
 Find another nearby user
 ```
 
 Key lifecycle rules for skips:
 
-* **Persistent WebSocket**: The client keeps its single WebSocket connection alive. The server transitions session state from `ACTIVE` (in `MatchRoomDO`) back to `WAITING` (in `CampusMatcherDO`).
+* **Persistent WebSocket**: The client keeps its single WebSocket connection alive. The server transitions session state from `ACTIVE` (in `MatchRoomDO`) back to `WAITING` (in `RadarMatcherDO`).
 * **Partner UX**: The skipped partner is notified immediately and presented with options to either re-queue automatically or return home.
 * No page reload or WebSocket reconnect is required.
 
@@ -1080,7 +1080,7 @@ Device fingerprints
              ┌─────────────────┐        ┌─────────────────────┐
              │ Durable Objects │        │ Supabase             │
              │                 │        │                     │
-             │ CampusMatcherDO │        │ Auth (Email/Google) │
+             │ RadarMatcherDO │        │ Auth (Email/Google) │
              │  - Queues       │        │                     │
              │  - Distance     │        │ Managed PostgreSQL  │
              │  - Pairing      │        │  - User profiles    │
@@ -1109,10 +1109,10 @@ Device fingerprints
 | Authentication | Supabase Auth (Email + Google) |
 | Token Verification | Asymmetric ECC (P-256) via Supabase JWKS using `jose` |
 | Modern API Keys | Publishable key (`sb_publishable_...`) + Secret key (`sb_secret_...`) |
-| Realtime Architecture | Two-Tier Cloudflare Durable Objects (`CampusMatcherDO` + `MatchRoomDO`) |
+| Realtime Architecture | Two-Tier Cloudflare Durable Objects (`RadarMatcherDO` + `MatchRoomDO`) |
 | Transport | WebSockets (single persistent connection across skips) |
 | WebSocket optimization | WebSocket Hibernation in `MatchRoomDO` |
-| Matchmaking Engine | In-memory `CampusMatcherDO` using Haversine distance proximity |
+| Matchmaking Engine | In-memory `RadarMatcherDO` using Haversine distance proximity |
 | Search Radius | User-configurable (1–50 km, default 5 km) with preset buttons |
 | Location Calibration | Client-side geolocation with custom coordinate calibration option |
 | Realtime rate limiting | In-memory sliding window in `MatchRoomDO` (20 msgs/min) |
@@ -1126,7 +1126,7 @@ Device fingerprints
 | Blocking | Persistent user-to-user blocks |
 | Reporting | Context-bound flow (requires active `match_id`) with categories & optional text |
 | Report thresholds | Automatic server-side bans (6 $\rightarrow$ 24h, 11 $\rightarrow$ 7d, 20 $\rightarrow$ permanent) |
-| Skip lifecycle | In-session re-queueing to `CampusMatcherDO` without WebSocket reconnect |
+| Skip lifecycle | In-session re-queueing to `RadarMatcherDO` without WebSocket reconnect |
 | IP-based identity | None |
 | Device fingerprinting | None |
 | Proactive human moderation | None |
@@ -1142,7 +1142,7 @@ Cloudflare Worker
 Supabase Auth
     owns account authentication.
 
-CampusMatcherDO
+RadarMatcherDO
     owns waiting queues and in-memory distance proximity matching.
 
 MatchRoomDO

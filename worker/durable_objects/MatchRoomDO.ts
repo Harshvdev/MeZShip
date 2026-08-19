@@ -51,13 +51,28 @@ export class MatchRoomDO extends DurableObject<Env> {
         return new Response("Missing parameters", { status: 400 });
       }
 
+      let matchCtx = await this.getMatchContext();
+
+      // Authorization guard: reject if room is already full with 2 other users
+      if (matchCtx && matchCtx.userA && matchCtx.userB && matchCtx.userA !== userId && matchCtx.userB !== userId) {
+        return new Response("Room full or unauthorized", { status: 403 });
+      }
+
+      // Evict any existing socket for this user in this room to prevent multi-socket duplicates
+      const existingUserSockets = this.ctx.getWebSockets(userId);
+      for (const oldWs of existingUserSockets) {
+        try {
+          oldWs.serializeAttachment(null);
+          oldWs.close(1000, "Replaced by newer room connection");
+        } catch {}
+      }
+
       // Persist unique socketId in attachment on server WebSocket for hibernation resilience
       const socketId = `ws_${crypto.randomUUID()}`;
       const attachment: SocketAttachment = { socketId, userId, displayName, matchId };
       server.serializeAttachment(attachment);
       this.ctx.acceptWebSocket(server, [userId, socketId]);
 
-      let matchCtx = await this.getMatchContext();
       if (!matchCtx) {
         matchCtx = {
           matchId,
@@ -202,7 +217,7 @@ export class MatchRoomDO extends DurableObject<Env> {
             ? targetAttachment?.socketId === currentSocketId
             : socket === ws;
 
-          if (!isCurrentSocket) {
+          if (!isCurrentSocket && targetAttachment?.userId) {
             try {
               socket.send(payload);
             } catch (e) {
@@ -245,7 +260,7 @@ export class MatchRoomDO extends DurableObject<Env> {
             ? targetAttachment?.socketId === currentSocketId
             : socket === ws;
 
-          if (!isCurrentSocket) {
+          if (!isCurrentSocket && targetAttachment?.userId) {
             try {
               socket.send(payload);
             } catch (e) {
@@ -266,9 +281,9 @@ export class MatchRoomDO extends DurableObject<Env> {
 
           const isCurrentSocket =
             socket === ws ||
-            (currentSocketId && targetSocketId && targetSocketId === currentSocketId);
+            Boolean(currentSocketId && targetSocketId && targetSocketId === currentSocketId);
 
-          if (!isCurrentSocket) {
+          if (!isCurrentSocket && targetAttachment?.userId) {
             try {
               socket.send(payload);
             } catch (e) {
@@ -287,13 +302,17 @@ export class MatchRoomDO extends DurableObject<Env> {
   }
 
   async webSocketClose(ws: WebSocket, code: number, reason: string, wasClean: boolean) {
+    const attachment = ws.deserializeAttachment() as SocketAttachment | null;
     const senderTags = this.ctx.getTags(ws);
-    let senderId = senderTags[0];
-    if (!senderId) {
-      const attachment = ws.deserializeAttachment() as SocketAttachment | null;
-      senderId = attachment?.userId || "";
+    const senderId = senderTags[0] || attachment?.userId || "";
+
+    // Only fire disconnect if the socket was not previously evicted (attachment is not null)
+    if (attachment && attachment.userId) {
+      try {
+        ws.serializeAttachment(null);
+      } catch {}
+      await this.handleSkip(ws, senderId, "disconnect");
     }
-    await this.handleSkip(ws, senderId, "disconnect");
   }
 
   private async handleSkip(sourceWs: WebSocket, initiatorId: string, reason: "skip" | "leave" | "disconnect" = "skip") {
@@ -328,7 +347,7 @@ export class MatchRoomDO extends DurableObject<Env> {
         ? targetAttachment?.socketId === sourceSocketId
         : socket === sourceWs;
 
-      if (!isSource) {
+      if (!isSource && targetAttachment?.userId) {
         try {
           socket.send(payload);
         } catch (e) {

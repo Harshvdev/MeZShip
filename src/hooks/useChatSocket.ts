@@ -566,6 +566,10 @@ export function useChatSocket(
 
   const skip = useCallback(() => {
     sendTyping(false);
+    if (autoReconnectTimerRef.current) {
+      clearTimeout(autoReconnectTimerRef.current);
+      autoReconnectTimerRef.current = null;
+    }
     if (activeMatchIdRef.current) {
       updateMatchLogEnd(activeMatchIdRef.current, "self_skip");
     }

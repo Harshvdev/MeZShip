@@ -1,6 +1,7 @@
 export interface Env {
-  CAMPUS_MATCHER: DurableObjectNamespace;
+  RADAR_MATCHER: DurableObjectNamespace;
   MATCH_ROOM: DurableObjectNamespace;
+  CAMPUS_MATCHER?: DurableObjectNamespace;
   DATABASE_URL?: string;
   DIRECT_URL?: string;
   SUPABASE_JWKS_URL?: string;
