@@ -1,6 +1,7 @@
 import { DurableObject } from "cloudflare:workers";
 import type { Env, WaitingUser } from "../types";
 import { haversineDistanceMeters } from "../lib/geo";
+import { getPrisma } from "../lib/db";
 
 interface QueueEntry {
   ws: WebSocket;
@@ -10,10 +11,27 @@ interface QueueEntry {
 export class RadarMatcherDO extends DurableObject<Env> {
   private presence: Map<string, number> = new Map(); // userId -> lastSeen timestamp
   private blockPairs: Set<string> = new Set(); // "blocker:blocked"
+  private blocksLoaded = false;
   private matchHistory: Map<string, Map<string, number>> = new Map(); // userId -> (partnerId -> timestamp)
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
+  }
+
+  private async ensureBlocksLoaded() {
+    if (this.blocksLoaded) return;
+    try {
+      const prisma = getPrisma(this.env);
+      const allBlocks = await prisma.userBlock.findMany({
+        select: { blocker_user_id: true, blocked_user_id: true },
+      });
+      for (const b of allBlocks) {
+        this.blockPairs.add(`${b.blocker_user_id}:${b.blocked_user_id}`);
+      }
+      this.blocksLoaded = true;
+    } catch (e) {
+      console.warn("RadarMatcherDO failed to load initial blocks:", e);
+    }
   }
 
   private cleanPresence() {
@@ -101,9 +119,16 @@ export class RadarMatcherDO extends DurableObject<Env> {
 
       const userId = url.searchParams.get("userId") || "";
       const displayName = url.searchParams.get("displayName") || "Anonymous";
-      const lat = parseFloat(url.searchParams.get("lat") || "0");
-      const lng = parseFloat(url.searchParams.get("lng") || "0");
-      const maxRadiusMeters = parseFloat(url.searchParams.get("radius") || "5000");
+      const rawLat = parseFloat(url.searchParams.get("lat") || "0");
+      const rawLng = parseFloat(url.searchParams.get("lng") || "0");
+      const rawRadius = parseFloat(url.searchParams.get("radius") || "5000");
+      const lat = !isNaN(rawLat) ? rawLat : 0;
+      const lng = !isNaN(rawLng) ? rawLng : 0;
+      const maxRadiusMeters = !isNaN(rawRadius) && rawRadius > 0 ? rawRadius : 5000;
+      const excludeParam = url.searchParams.get("exclude") || "";
+      const excludedUserIds = excludeParam
+        ? excludeParam.split(",").map((s) => s.trim()).filter(Boolean)
+        : [];
 
       if (!userId) {
         return new Response("Missing userId", { status: 400 });
@@ -125,6 +150,7 @@ export class RadarMatcherDO extends DurableObject<Env> {
         lng,
         maxRadiusMeters,
         queuedAt: Date.now(),
+        excludedUserIds,
       };
 
       // Hibernation-safe attachment and acceptance
@@ -139,7 +165,7 @@ export class RadarMatcherDO extends DurableObject<Env> {
       const otherOnline = Math.max(0, totalOnline - 1);
 
       // Deliver queue welcome and attempt matching on the next microtask after 101 handshake completes
-      queueMicrotask(() => {
+      queueMicrotask(async () => {
         try {
           server.send(
             JSON.stringify({
@@ -150,7 +176,7 @@ export class RadarMatcherDO extends DurableObject<Env> {
               onlineCount: otherOnline,
             })
           );
-          this.tryMatch(userId);
+          await this.tryMatch(userId);
         } catch (e) {
           console.error("Match error in queueMicrotask:", e);
         }
@@ -198,7 +224,32 @@ export class RadarMatcherDO extends DurableObject<Env> {
       for (const b of blocks) {
         this.blockPairs.add(`${b.blocker}:${b.blocked}`);
       }
+      this.blocksLoaded = true;
       return new Response(JSON.stringify({ success: true }));
+    }
+
+    if (url.pathname === "/add_block" && request.method === "POST") {
+      try {
+        const { blocker, blocked }: { blocker: string; blocked: string } = await request.json();
+        if (blocker && blocked) {
+          this.blockPairs.add(`${blocker}:${blocked}`);
+        }
+      } catch {}
+      return new Response(JSON.stringify({ success: true }), {
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    if (url.pathname === "/remove_block" && request.method === "POST") {
+      try {
+        const { blocker, blocked }: { blocker: string; blocked: string } = await request.json();
+        if (blocker && blocked) {
+          this.blockPairs.delete(`${blocker}:${blocked}`);
+        }
+      } catch {}
+      return new Response(JSON.stringify({ success: true }), {
+        headers: { "Content-Type": "application/json" },
+      });
     }
 
     return new Response("RadarMatcherDO Active", { status: 200 });
@@ -231,10 +282,13 @@ export class RadarMatcherDO extends DurableObject<Env> {
           current.lng = !isNaN(parsedLng) ? parsedLng : 0;
           if (data.radius) {
             const parsedRadius = typeof data.radius === "number" ? data.radius : parseFloat(data.radius || "5000");
-            current.maxRadiusMeters = !isNaN(parsedRadius) ? parsedRadius : 5000;
+            current.maxRadiusMeters = !isNaN(parsedRadius) && parsedRadius > 0 ? parsedRadius : 5000;
+          }
+          if (Array.isArray(data.excludedUserIds)) {
+            current.excludedUserIds = data.excludedUserIds;
           }
           ws.serializeAttachment(current);
-          this.tryMatch(current.userId);
+          await this.tryMatch(current.userId);
         }
       }
     } catch (e) {
@@ -255,7 +309,9 @@ export class RadarMatcherDO extends DurableObject<Env> {
     );
   }
 
-  private tryMatch(candidateId: string) {
+  private async tryMatch(candidateId: string) {
+    await this.ensureBlocksLoaded();
+
     const waitingEntries = this.getWaitingEntries();
     const candidateEntry = waitingEntries.find((e) => e.user.userId === candidateId);
     if (!candidateEntry) return;
@@ -278,8 +334,15 @@ export class RadarMatcherDO extends DurableObject<Env> {
       const otherId = other.user.userId;
       if (otherId === candidateId) continue;
 
-      // 1. Check blocking relationships
+      // 1. Check permanent database blocking relationships
       if (this.isBlocked(candidateId, otherId)) {
+        continue;
+      }
+
+      // 2. Check session-based report exclusions (bidirectional)
+      const candExcluded = candidateEntry.user.excludedUserIds?.includes(otherId);
+      const otherExcluded = other.user.excludedUserIds?.includes(candidateId);
+      if (candExcluded || otherExcluded) {
         continue;
       }
 
@@ -290,7 +353,7 @@ export class RadarMatcherDO extends DurableObject<Env> {
 
       const bothHaveCoords = candHasCoords && otherHasCoords;
 
-      // 2. Proximity calculation (Haversine formula ONLY if both users have valid GPS coordinates)
+      // 3. Proximity calculation (Haversine formula ONLY if both users have valid GPS coordinates)
       let distance: number | null = null;
       if (bothHaveCoords) {
         distance = haversineDistanceMeters(
@@ -354,6 +417,25 @@ export class RadarMatcherDO extends DurableObject<Env> {
 
     // MATCH FOUND!
     const matchId = `match_${crypto.randomUUID()}`;
+
+    // Pre-initialize MatchRoomDO with legitimate participants before notifying users
+    const roomId = this.env.MATCH_ROOM.idFromName(matchId);
+    const room = this.env.MATCH_ROOM.get(roomId);
+    try {
+      await room.fetch(
+        new Request("https://internal/init_room", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            matchId,
+            userA: candidateEntry.user.userId,
+            userB: best.other.user.userId,
+          }),
+        })
+      );
+    } catch (e) {
+      console.error("Failed to pre-init match room:", e);
+    }
 
     // Clear attachments on ALL sockets belonging to both matched users to prevent multiple simultaneous pairings
     const candidateSockets = this.ctx.getWebSockets(candidateId);

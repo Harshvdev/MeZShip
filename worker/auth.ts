@@ -15,6 +15,14 @@ function getJWKS(jwksUrl: string) {
   return jwksCache;
 }
 
+function base64UrlDecode(str: string): string {
+  let base64 = str.replace(/-/g, "+").replace(/_/g, "/");
+  while (base64.length % 4 !== 0) {
+    base64 += "=";
+  }
+  return atob(base64);
+}
+
 export async function verifySupabaseToken(
   authHeader: string | null,
   env: Env
@@ -37,7 +45,9 @@ export async function verifySupabaseToken(
       // Fallback: manually inspect header if malformed or non-standard
       const parts = token.split(".");
       if (parts.length >= 2) {
-        header = JSON.parse(atob(parts[0]));
+        try {
+          header = JSON.parse(base64UrlDecode(parts[0]));
+        } catch {}
       }
     }
 

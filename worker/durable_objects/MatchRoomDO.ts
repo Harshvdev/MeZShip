@@ -150,6 +150,23 @@ export class MatchRoomDO extends DurableObject<Env> {
       });
     }
 
+    // 3. Room pre-initialization endpoint called by RadarMatcherDO
+    if (url.pathname === "/init_room" && request.method === "POST") {
+      const body: { matchId: string; userA: string; userB: string } = await request.json();
+      const matchCtx: MatchContext = {
+        matchId: body.matchId,
+        userA: body.userA,
+        userB: body.userB,
+        createdAt: Date.now(),
+        endedAt: null,
+      };
+      this.matchContext = matchCtx;
+      await this.ctx.storage.put("matchContext", matchCtx);
+      return new Response(JSON.stringify({ success: true }), {
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
     return new Response("MatchRoomDO Active", { status: 200 });
   }
 
@@ -317,12 +334,22 @@ export class MatchRoomDO extends DurableObject<Env> {
 
   private async handleSkip(sourceWs: WebSocket, initiatorId: string, reason: "skip" | "leave" | "disconnect" = "skip") {
     const matchCtx = await this.getMatchContext();
-    if (matchCtx && !matchCtx.endedAt) {
+    // If this match room has already concluded, ignore secondary close/disconnect triggers
+    if (matchCtx && matchCtx.endedAt) {
+      return;
+    }
+
+    if (matchCtx) {
       matchCtx.endedAt = Date.now();
       try {
         await this.ctx.storage.put("matchContext", matchCtx);
       } catch {}
     }
+
+    // Clear attachment on sourceWs so subsequent close events are no-ops
+    try {
+      sourceWs.serializeAttachment(null);
+    } catch {}
 
     let defaultMsg = "Your partner skipped the chat.";
     if (reason === "leave") {

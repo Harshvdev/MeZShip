@@ -38,10 +38,10 @@ export function SettingsModal({
   }, [currentDisplayName]);
 
   useEffect(() => {
-    if (isOpen && token && activeTab === "blocks") {
+    if (isOpen && token) {
       fetchBlockedUsers();
     }
-  }, [isOpen, token, activeTab]);
+  }, [isOpen, token]);
 
   const fetchBlockedUsers = async () => {
     if (!token) return;

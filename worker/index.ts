@@ -307,6 +307,23 @@ export default {
           },
         });
 
+        // Sync real-time block to RadarMatcherDO
+        try {
+          const matcher = getMatcherDO(env);
+          await matcher.fetch(
+            new Request("http://internal/add_block", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                blocker: authUser.userId,
+                blocked: body.targetUserId,
+              }),
+            })
+          );
+        } catch (e) {
+          console.warn("Failed to forward add_block to RadarMatcherDO:", e);
+        }
+
         return jsonResponse({ success: true });
       }
     }
@@ -319,6 +336,24 @@ export default {
           blocked_user_id: blockedUserId,
         },
       });
+
+      // Sync real-time unblock to RadarMatcherDO
+      try {
+        const matcher = getMatcherDO(env);
+        await matcher.fetch(
+          new Request("http://internal/remove_block", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              blocker: authUser.userId,
+              blocked: blockedUserId,
+            }),
+          })
+        );
+      } catch (e) {
+        console.warn("Failed to forward remove_block to RadarMatcherDO:", e);
+      }
+
       return jsonResponse({ success: true });
     }
 

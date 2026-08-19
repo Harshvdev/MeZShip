@@ -120,7 +120,12 @@ export function useGeolocation() {
       const saved = localStorage.getItem(STORAGE_KEY);
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (parsed.lat && parsed.lng) {
+        if (
+          typeof parsed.lat === "number" &&
+          !isNaN(parsed.lat) &&
+          typeof parsed.lng === "number" &&
+          !isNaN(parsed.lng)
+        ) {
           // Clean legacy campus / college names if present in localStorage
           let cleanName = parsed.locationName || "Calibrated Location";
           if (

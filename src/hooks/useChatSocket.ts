@@ -73,6 +73,8 @@ export function useChatSocket(
   const currentRadiusRef = useRef<number>(5000);
   const activeMatchIdRef = useRef<string | null>(null);
   const autoReconnectTimerRef = useRef<any>(null);
+  const sessionExcludedUserIdsRef = useRef<Set<string>>(new Set());
+  const startMatchingRef = useRef<(radius?: number) => void>(() => {});
   const pingIntervalRef = useRef<any>(null);
   const watchdogIntervalRef = useRef<any>(null);
   const lastHeartbeatResponseRef = useRef<number>(Date.now());
@@ -237,6 +239,10 @@ export function useChatSocket(
   const connectToRoom = useCallback(
     (matchId: string) => {
       closeCurrentSocket();
+      if (autoReconnectTimerRef.current) {
+        clearTimeout(autoReconnectTimerRef.current);
+        autoReconnectTimerRef.current = null;
+      }
       setPartnerLeaveReason(null);
       activeMatchIdRef.current = matchId;
 
@@ -373,7 +379,7 @@ export function useChatSocket(
             if (data.reason === "skip" || data.reason === "disconnect") {
               if (autoReconnectTimerRef.current) clearTimeout(autoReconnectTimerRef.current);
               autoReconnectTimerRef.current = setTimeout(() => {
-                startMatching(currentRadiusRef.current);
+                startMatchingRef.current(currentRadiusRef.current);
               }, 600);
             }
           }
@@ -398,7 +404,7 @@ export function useChatSocket(
             }
             if (autoReconnectTimerRef.current) clearTimeout(autoReconnectTimerRef.current);
             autoReconnectTimerRef.current = setTimeout(() => {
-              startMatching(currentRadiusRef.current);
+              startMatchingRef.current(currentRadiusRef.current);
             }, 250);
 
             return "PARTNER_SKIPPED";
@@ -426,6 +432,10 @@ export function useChatSocket(
         return;
       }
       closeCurrentSocket();
+      if (autoReconnectTimerRef.current) {
+        clearTimeout(autoReconnectTimerRef.current);
+        autoReconnectTimerRef.current = null;
+      }
 
       currentRadiusRef.current = radius;
       setMessages([]);
@@ -436,11 +446,17 @@ export function useChatSocket(
       const radiusKm = (radius / 1000).toFixed(0);
       setStatusMessage(`Searching for nearby users within ${radiusKm} km...`);
 
+      const excluded = Array.from(sessionExcludedUserIdsRef.current);
+      const excludeParam =
+        excluded.length > 0 ? `&exclude=${encodeURIComponent(excluded.join(","))}` : "";
+
       const wsUrl = `${getWsBaseUrl("/ws/queue")}?userId=${encodeURIComponent(
         userId
       )}&displayName=${encodeURIComponent(
         displayName || "Anonymous"
-      )}&lat=${userLat || 0}&lng=${userLng || 0}&radius=${radius}&token=${encodeURIComponent(token || "")}`;
+      )}&lat=${userLat || 0}&lng=${userLng || 0}&radius=${radius}&token=${encodeURIComponent(
+        token || ""
+      )}${excludeParam}`;
 
       const ws = new WebSocket(wsUrl);
       wsRef.current = ws;
@@ -457,6 +473,10 @@ export function useChatSocket(
           if (data.type === "pong") return;
 
           if (data.type === "match_found") {
+            if (autoReconnectTimerRef.current) {
+              clearTimeout(autoReconnectTimerRef.current);
+              autoReconnectTimerRef.current = null;
+            }
             setCurrentMatchId(data.matchId);
             activeMatchIdRef.current = data.matchId;
 
@@ -497,6 +517,8 @@ export function useChatSocket(
     },
     [userId, displayName, token, userLat, userLng, closeCurrentSocket, connectToRoom, startHeartbeat]
   );
+
+  startMatchingRef.current = startMatching;
 
   const sendMessage = useCallback(
     (text: string) => {
@@ -640,6 +662,7 @@ export function useChatSocket(
   const reportPartner = useCallback(
     async (reason: ReportReason, details?: string) => {
       if (!partner?.userId || !currentMatchId || !token) return false;
+      const reportedTargetId = partner.userId;
       try {
         const res = await fetch(getApiUrl("/api/reports"), {
           method: "POST",
@@ -648,7 +671,7 @@ export function useChatSocket(
             Authorization: `Bearer ${token}`,
           },
           body: JSON.stringify({
-            reportedUserId: partner.userId,
+            reportedUserId: reportedTargetId,
             matchId: currentMatchId,
             reason,
             details,
@@ -656,6 +679,8 @@ export function useChatSocket(
         });
 
         if (res.ok) {
+          // Record session exclusion so reported user is never rematched in this browser session
+          sessionExcludedUserIdsRef.current.add(reportedTargetId);
           markMatchReported(currentMatchId);
           skip();
           return true;
@@ -687,6 +712,8 @@ export function useChatSocket(
         });
 
         if (res.ok) {
+          // Record session exclusion so reported user is never rematched in this browser session
+          sessionExcludedUserIdsRef.current.add(reportedUserId);
           markMatchReported(matchId);
           return true;
         }
@@ -731,7 +758,7 @@ export function useChatSocket(
     [userId]
   );
 
-  // Keep active queue socket location in sync if GPS resolves or user calibrates while queued
+  // Keep active queue socket location and session exclusions in sync if GPS resolves or exclusions change
   useEffect(() => {
     if (
       chatState === "SEARCHING" &&
@@ -747,6 +774,7 @@ export function useChatSocket(
             lat: userLat,
             lng: userLng,
             radius: currentRadiusRef.current,
+            excludedUserIds: Array.from(sessionExcludedUserIdsRef.current),
           })
         );
       } catch (e) {
