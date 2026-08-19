@@ -48,7 +48,7 @@ function toggleEmojiInReactions(
 export interface PartnerInfo {
   userId: string;
   displayName: string;
-  distanceMeters: number;
+  distanceMeters?: number | null;
   campusId?: string;
 }
 
@@ -465,6 +465,7 @@ export function useChatSocket(
               partnerUserId: data.partner.userId,
               partnerDisplayName: data.partner.displayName,
               campusId: data.campusId || "nearby",
+              distanceMeters: data.distanceMeters,
               matchedAt: Date.now(),
             });
 
@@ -729,6 +730,30 @@ export function useChatSocket(
     },
     [userId]
   );
+
+  // Keep active queue socket location in sync if GPS resolves or user calibrates while queued
+  useEffect(() => {
+    if (
+      chatState === "SEARCHING" &&
+      wsRef.current &&
+      wsRef.current.readyState === WebSocket.OPEN &&
+      userLat !== null &&
+      userLng !== null
+    ) {
+      try {
+        wsRef.current.send(
+          JSON.stringify({
+            type: "update_location",
+            lat: userLat,
+            lng: userLng,
+            radius: currentRadiusRef.current,
+          })
+        );
+      } catch (e) {
+        console.warn("Failed to update queue location:", e);
+      }
+    }
+  }, [userLat, userLng, chatState]);
 
   useEffect(() => {
     return () => {

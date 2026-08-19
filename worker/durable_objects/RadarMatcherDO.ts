@@ -225,10 +225,13 @@ export class RadarMatcherDO extends DurableObject<Env> {
       } else if (data.type === "update_location") {
         const current = ws.deserializeAttachment() as WaitingUser | null;
         if (current) {
-          current.lat = data.lat;
-          current.lng = data.lng;
+          const parsedLat = typeof data.lat === "number" ? data.lat : parseFloat(data.lat || "0");
+          const parsedLng = typeof data.lng === "number" ? data.lng : parseFloat(data.lng || "0");
+          current.lat = !isNaN(parsedLat) ? parsedLat : 0;
+          current.lng = !isNaN(parsedLng) ? parsedLng : 0;
           if (data.radius) {
-            current.maxRadiusMeters = data.radius;
+            const parsedRadius = typeof data.radius === "number" ? data.radius : parseFloat(data.radius || "5000");
+            current.maxRadiusMeters = !isNaN(parsedRadius) ? parsedRadius : 5000;
           }
           ws.serializeAttachment(current);
           this.tryMatch(current.userId);
@@ -260,11 +263,16 @@ export class RadarMatcherDO extends DurableObject<Env> {
     interface CandidateMatchOption {
       otherId: string;
       other: QueueEntry;
-      distance: number;
+      distance: number | null;
       lastMatchedTime: number | null;
     }
 
     const eligibleMatches: CandidateMatchOption[] = [];
+
+    const candHasCoords =
+      typeof candidateEntry.user.lat === "number" &&
+      typeof candidateEntry.user.lng === "number" &&
+      (candidateEntry.user.lat !== 0 || candidateEntry.user.lng !== 0);
 
     for (const other of waitingEntries) {
       const otherId = other.user.userId;
@@ -275,26 +283,31 @@ export class RadarMatcherDO extends DurableObject<Env> {
         continue;
       }
 
-      // 2. Proximity calculation (Haversine formula)
-      const distance = haversineDistanceMeters(
-        candidateEntry.user.lat,
-        candidateEntry.user.lng,
-        other.user.lat,
-        other.user.lng
-      );
+      const otherHasCoords =
+        typeof other.user.lat === "number" &&
+        typeof other.user.lng === "number" &&
+        (other.user.lat !== 0 || other.user.lng !== 0);
+
+      const bothHaveCoords = candHasCoords && otherHasCoords;
+
+      // 2. Proximity calculation (Haversine formula ONLY if both users have valid GPS coordinates)
+      let distance: number | null = null;
+      if (bothHaveCoords) {
+        distance = haversineDistanceMeters(
+          candidateEntry.user.lat,
+          candidateEntry.user.lng,
+          other.user.lat,
+          other.user.lng
+        );
+      }
 
       const maxAllowedDistance = Math.min(
         candidateEntry.user.maxRadiusMeters || 5000,
         other.user.maxRadiusMeters || 5000
       );
 
-      // Distance check: must be within max allowed distance (default 5 km)
-      // If either user doesn't have GPS coordinates (lat/lng = 0), allow connecting
-      const hasCoords =
-        (candidateEntry.user.lat !== 0 || candidateEntry.user.lng !== 0) &&
-        (other.user.lat !== 0 || other.user.lng !== 0);
-
-      if (hasCoords && distance > maxAllowedDistance) {
+      // Distance check: If both users have GPS coordinates, enforce radius limit
+      if (bothHaveCoords && distance !== null && distance > maxAllowedDistance) {
         continue;
       }
 
@@ -319,11 +332,20 @@ export class RadarMatcherDO extends DurableObject<Env> {
       if (a.lastMatchedTime !== null && b.lastMatchedTime === null) return 1;
 
       if (a.lastMatchedTime === null && b.lastMatchedTime === null) {
+        if (a.distance !== null && b.distance !== null) {
+          const distDiff = a.distance - b.distance;
+          if (Math.abs(distDiff) > 50) return distDiff;
+        }
         return a.other.user.queuedAt - b.other.user.queuedAt;
       }
 
       const timeDiff = (a.lastMatchedTime || 0) - (b.lastMatchedTime || 0);
       if (timeDiff !== 0) return timeDiff;
+
+      if (a.distance !== null && b.distance !== null) {
+        const distDiff = a.distance - b.distance;
+        if (Math.abs(distDiff) > 50) return distDiff;
+      }
 
       return a.other.user.queuedAt - b.other.user.queuedAt;
     });
@@ -351,10 +373,15 @@ export class RadarMatcherDO extends DurableObject<Env> {
     // Record interaction timestamp for circular tie-breaker memory
     this.recordMatch(candidateId, best.otherId);
 
+    const finalDistanceMeters =
+      best.distance !== null && !isNaN(best.distance)
+        ? Math.round(best.distance)
+        : null;
+
     const matchPayloadA = JSON.stringify({
       type: "match_found",
       matchId,
-      distanceMeters: Math.round(best.distance),
+      distanceMeters: finalDistanceMeters,
       partner: {
         userId: best.other.user.userId,
         displayName: best.other.user.displayName,
@@ -364,7 +391,7 @@ export class RadarMatcherDO extends DurableObject<Env> {
     const matchPayloadB = JSON.stringify({
       type: "match_found",
       matchId,
-      distanceMeters: Math.round(best.distance),
+      distanceMeters: finalDistanceMeters,
       partner: {
         userId: candidateEntry.user.userId,
         displayName: candidateEntry.user.displayName,
