@@ -7,7 +7,7 @@ interface QueueEntry {
   user: WaitingUser;
 }
 
-export class CampusMatcherDO extends DurableObject<Env> {
+export class ProximityMatcherDO extends DurableObject<Env> {
   private presence: Map<string, number> = new Map(); // userId -> lastSeen timestamp
   private blockPairs: Set<string> = new Set(); // "blocker:blocked"
   private matchHistory: Map<string, Map<string, number>> = new Map(); // userId -> (partnerId -> timestamp)
@@ -172,7 +172,7 @@ export class CampusMatcherDO extends DurableObject<Env> {
       return new Response(JSON.stringify({ success: true }));
     }
 
-    return new Response("CampusMatcherDO Active", { status: 200 });
+    return new Response("ProximityMatcherDO Active", { status: 200 });
   }
 
   async webSocketMessage(ws: WebSocket, message: string | ArrayBuffer) {

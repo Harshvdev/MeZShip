@@ -1,6 +1,6 @@
 import { verifySupabaseToken } from "./auth";
 import { getPrisma } from "./lib/db";
-import { CampusMatcherDO } from "./durable_objects/CampusMatcherDO";
+import { ProximityMatcherDO } from "./durable_objects/ProximityMatcherDO";
 import { MatchRoomDO } from "./durable_objects/MatchRoomDO";
 import type { Env } from "./types";
 import { BanType, ReportReason } from "@prisma/client";
@@ -10,7 +10,7 @@ import {
   getCampusCenter,
 } from "./lib/geo";
 
-export { CampusMatcherDO, MatchRoomDO };
+export { ProximityMatcherDO, MatchRoomDO };
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
@@ -99,9 +99,9 @@ export default {
         }
 
         if (url.pathname === "/ws/queue") {
-          // Route to singleton CampusMatcherDO
-          const matcherId = env.CAMPUS_MATCHER.idFromName("global_campus_matcher");
-          const matcher = env.CAMPUS_MATCHER.get(matcherId);
+          // Route to singleton ProximityMatcherDO
+          const matcherId = env.PROXIMITY_MATCHER.idFromName("global_proximity_matcher");
+          const matcher = env.PROXIMITY_MATCHER.get(matcherId);
           return await matcher.fetch(request);
         }
 
@@ -130,8 +130,8 @@ export default {
 
     if (url.pathname === "/api/stats" && request.method === "GET") {
       try {
-        const matcherId = env.CAMPUS_MATCHER.idFromName("global_campus_matcher");
-        const matcher = env.CAMPUS_MATCHER.get(matcherId);
+        const matcherId = env.PROXIMITY_MATCHER.idFromName("global_proximity_matcher");
+        const matcher = env.PROXIMITY_MATCHER.get(matcherId);
         const statsRes = await matcher.fetch(new Request("http://internal/stats"));
         const stats = await statsRes.json();
         return jsonResponse(stats);
@@ -145,8 +145,8 @@ export default {
         const authHeader = request.headers.get("Authorization");
         const authUser = await verifySupabaseToken(authHeader, env);
         if (authUser) {
-          const matcherId = env.CAMPUS_MATCHER.idFromName("global_campus_matcher");
-          const matcher = env.CAMPUS_MATCHER.get(matcherId);
+          const matcherId = env.PROXIMITY_MATCHER.idFromName("global_proximity_matcher");
+          const matcher = env.PROXIMITY_MATCHER.get(matcherId);
           await matcher.fetch(
             new Request("http://internal/heartbeat", {
               method: "POST",

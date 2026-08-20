@@ -1,5 +1,5 @@
 export interface Env {
-  CAMPUS_MATCHER: DurableObjectNamespace;
+  PROXIMITY_MATCHER: DurableObjectNamespace;
   MATCH_ROOM: DurableObjectNamespace;
   DATABASE_URL?: string;
   DIRECT_URL?: string;
