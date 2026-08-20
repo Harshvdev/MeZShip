@@ -1,6 +1,6 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "mezship-worker",
+  "name": "mezship",
   "main": "worker/index.ts",
   "compatibility_date": "2024-12-01",
   "compatibility_flags": ["nodejs_compat"],
@@ -19,7 +19,16 @@
   "migrations": [
     {
       "tag": "v1",
-      "new_sqlite_classes": ["ProximityMatcherDO", "MatchRoomDO"]
+      "new_sqlite_classes": ["CampusMatcherDO", "MatchRoomDO"]
+    },
+    {
+      "tag": "v2",
+      "renamed_classes": [
+        {
+          "from": "CampusMatcherDO",
+          "to": "ProximityMatcherDO"
+        }
+      ]
     }
   ],
   "vars": {

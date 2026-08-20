@@ -5,7 +5,7 @@ import { MatchRoomDO } from "./durable_objects/MatchRoomDO";
 import type { Env } from "./types";
 import { BanType, ReportReason } from "@prisma/client";
 
-export { ProximityMatcherDO, MatchRoomDO };
+export { ProximityMatcherDO, MatchRoomDO, ProximityMatcherDO as CampusMatcherDO };
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
