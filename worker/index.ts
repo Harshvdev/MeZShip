@@ -4,11 +4,6 @@ import { ProximityMatcherDO } from "./durable_objects/ProximityMatcherDO";
 import { MatchRoomDO } from "./durable_objects/MatchRoomDO";
 import type { Env } from "./types";
 import { BanType, ReportReason } from "@prisma/client";
-import {
-  isCoordinateInsideCampus,
-  haversineDistanceMeters,
-  getCampusCenter,
-} from "./lib/geo";
 
 export { ProximityMatcherDO, MatchRoomDO };
 
@@ -161,10 +156,6 @@ export default {
       }
     }
 
-    if (url.pathname === "/api/campuses" && request.method === "GET") {
-      return jsonResponse({ campuses: [] });
-    }
-
     // --------------------------------------------------------------------------
     // 3. Authenticated HTTP Routes
     // --------------------------------------------------------------------------
@@ -235,38 +226,6 @@ export default {
         });
 
         return jsonResponse({ profile });
-      }
-    }
-
-    // Campus Preferences
-    if (url.pathname === "/api/preferences") {
-      if (request.method === "GET") {
-        const prefs = await prisma.userCampusPreference.findMany({
-          where: { user_id: authUser.userId },
-          select: { campus_id: true },
-        });
-        return jsonResponse({ preferences: prefs.map((p) => p.campus_id) });
-      }
-
-      if (request.method === "POST") {
-        const body: { campusIds: string[] } = await request.json();
-        const campusIds = Array.isArray(body.campusIds) ? body.campusIds : [];
-
-        // Replace preferences transactionally
-        await prisma.$transaction([
-          prisma.userCampusPreference.deleteMany({
-            where: { user_id: authUser.userId },
-          }),
-          prisma.userCampusPreference.createMany({
-            data: campusIds.map((cid) => ({
-              user_id: authUser.userId,
-              campus_id: cid,
-            })),
-            skipDuplicates: true,
-          }),
-        ]);
-
-        return jsonResponse({ success: true, campusIds });
       }
     }
 

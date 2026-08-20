@@ -5,7 +5,7 @@ import type { GeoJSONPolygon } from "../types";
 /**
  * Checks if coordinates [lng, lat] are inside a GeoJSON Polygon or MultiPolygon
  */
-export function isCoordinateInsideCampus(
+export function isCoordinateInsidePolygon(
   lng: number,
   lat: number,
   boundary: GeoJSONPolygon | any
@@ -60,7 +60,7 @@ export function haversineDistanceMeters(
 /**
  * Computes the approximate center [lat, lng] of a GeoJSON polygon boundary
  */
-export function getCampusCenter(boundary: any): { lat: number; lng: number } | null {
+export function getPolygonCenter(boundary: any): { lat: number; lng: number } | null {
   try {
     let coords: number[][] = [];
     if (boundary?.type === "Polygon" && boundary.coordinates?.[0]) {

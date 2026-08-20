@@ -121,17 +121,11 @@ export function useGeolocation() {
       if (saved) {
         const parsed = JSON.parse(saved);
         if (parsed.lat && parsed.lng) {
-          // Clean legacy campus / college names if present in localStorage
-          let cleanName = parsed.locationName || "Calibrated Location";
-          if (
-            typeof cleanName === "string" &&
-            (cleanName.toLowerCase().includes("campus") ||
-              cleanName.toLowerCase().includes("institute") ||
-              cleanName.toLowerCase().includes("college") ||
-              cleanName.toLowerCase().includes("university"))
-          ) {
-            cleanName = "Calibrated Location";
-          }
+          // Sanitize calibrated location label
+          const cleanName =
+            typeof parsed.locationName === "string" && parsed.locationName.trim()
+              ? parsed.locationName
+              : "Calibrated Location";
 
           setLocation({
             lat: parsed.lat,

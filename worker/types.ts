@@ -28,7 +28,6 @@ export interface WaitingUser {
   lng: number;
   maxRadiusMeters: number;
   queuedAt: number;
-  campusIds?: string[];
 }
 
 export interface GeoJSONPolygon {

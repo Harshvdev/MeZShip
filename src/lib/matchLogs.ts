@@ -2,7 +2,6 @@ export interface MatchLogEntry {
   matchId: string;
   partnerUserId: string;
   partnerDisplayName: string;
-  campusId: string;
   matchedAt: number;
   endedAt?: number;
   leaveReason?: "skip" | "leave" | "disconnect" | "self_skip" | "self_leave";

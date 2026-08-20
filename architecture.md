@@ -72,7 +72,7 @@ The MVP does not include:
 * friends
 * likes
 * public posts
-* college/campus-restricted geofencing
+* fixed boundary geofencing
 * public user discovery outside configured distance radius
 * voice chat
 * video chat
@@ -1045,7 +1045,7 @@ Every active session
 Every normal message
 Chat history
 Precise location history
-Campus geofences
+Fixed boundary geofences
 IP-based identities
 Device fingerprints
 ```

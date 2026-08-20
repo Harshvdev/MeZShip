@@ -49,7 +49,6 @@ export interface PartnerInfo {
   userId: string;
   displayName: string;
   distanceMeters: number;
-  campusId?: string;
 }
 
 export function useChatSocket(
@@ -464,7 +463,6 @@ export function useChatSocket(
               matchId: data.matchId,
               partnerUserId: data.partner.userId,
               partnerDisplayName: data.partner.displayName,
-              campusId: data.campusId || "nearby",
               matchedAt: Date.now(),
             });
 
@@ -472,7 +470,6 @@ export function useChatSocket(
               userId: data.partner.userId,
               displayName: data.partner.displayName,
               distanceMeters: data.distanceMeters,
-              campusId: data.campusId,
             });
             connectToRoom(data.matchId);
           } else if (data.type === "queue_joined") {

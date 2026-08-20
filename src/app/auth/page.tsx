@@ -129,14 +129,14 @@ export default function AuthPage() {
         <form onSubmit={handleEmailAuth} className="space-y-3">
           <div>
             <label className="block font-mono text-[11px] text-ash mb-1">
-              CAMPUS / PERSONAL EMAIL
+              EMAIL ADDRESS
             </label>
             <div className="relative">
               <input
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="identity@campus.edu"
+                placeholder="identity@example.com"
                 required
                 className="w-full pl-9 pr-4 py-2 rounded-lg bg-surface-raised border border-line focus:border-signal focus:outline-none text-xs sm:text-sm text-paper placeholder-ash/50 transition-colors font-mono"
               />
