@@ -81,9 +81,12 @@ export class CampusMatcherDO extends DurableObject<Env> {
 
       const userId = url.searchParams.get("userId") || "";
       const displayName = url.searchParams.get("displayName") || "Anonymous";
-      const lat = parseFloat(url.searchParams.get("lat") || "0");
-      const lng = parseFloat(url.searchParams.get("lng") || "0");
-      const maxRadiusMeters = parseFloat(url.searchParams.get("radius") || "5000");
+      const parsedLat = parseFloat(url.searchParams.get("lat") || "0");
+      const parsedLng = parseFloat(url.searchParams.get("lng") || "0");
+      const lat = Number.isFinite(parsedLat) ? parsedLat : 0;
+      const lng = Number.isFinite(parsedLng) ? parsedLng : 0;
+      const parsedRadius = parseFloat(url.searchParams.get("radius") || "5000");
+      const maxRadiusMeters = Number.isFinite(parsedRadius) && parsedRadius > 0 ? parsedRadius : 5000;
 
       if (!userId) {
         return new Response("Missing userId", { status: 400 });
@@ -196,10 +199,17 @@ export class CampusMatcherDO extends DurableObject<Env> {
       } else if (data.type === "update_location") {
         const current = ws.deserializeAttachment() as WaitingUser | null;
         if (current) {
-          current.lat = data.lat;
-          current.lng = data.lng;
+          const lat = typeof data.lat === "number" ? data.lat : parseFloat(data.lat);
+          const lng = typeof data.lng === "number" ? data.lng : parseFloat(data.lng);
+          if (Number.isFinite(lat) && Number.isFinite(lng)) {
+            current.lat = lat;
+            current.lng = lng;
+          }
           if (data.radius) {
-            current.maxRadiusMeters = data.radius;
+            const radius = typeof data.radius === "number" ? data.radius : parseFloat(data.radius);
+            if (Number.isFinite(radius) && radius > 0) {
+              current.maxRadiusMeters = radius;
+            }
           }
           ws.serializeAttachment(current);
           this.tryMatch(current.userId);
@@ -232,10 +242,20 @@ export class CampusMatcherDO extends DurableObject<Env> {
       otherId: string;
       other: QueueEntry;
       distance: number;
+      hasPreciseDistance: boolean;
       lastMatchedTime: number | null;
     }
 
     const eligibleMatches: CandidateMatchOption[] = [];
+
+    const candLat = candidateEntry.user.lat;
+    const candLng = candidateEntry.user.lng;
+    const candHasCoords =
+      typeof candLat === "number" &&
+      typeof candLng === "number" &&
+      Number.isFinite(candLat) &&
+      Number.isFinite(candLng) &&
+      (candLat !== 0 || candLng !== 0);
 
     for (const other of waitingEntries) {
       const otherId = other.user.userId;
@@ -246,27 +266,38 @@ export class CampusMatcherDO extends DurableObject<Env> {
         continue;
       }
 
-      // 2. Proximity calculation (Haversine formula)
-      const distance = haversineDistanceMeters(
-        candidateEntry.user.lat,
-        candidateEntry.user.lng,
-        other.user.lat,
-        other.user.lng
-      );
+      const otherLat = other.user.lat;
+      const otherLng = other.user.lng;
+      const otherHasCoords =
+        typeof otherLat === "number" &&
+        typeof otherLng === "number" &&
+        Number.isFinite(otherLat) &&
+        Number.isFinite(otherLng) &&
+        (otherLat !== 0 || otherLng !== 0);
 
-      const maxAllowedDistance = Math.min(
-        candidateEntry.user.maxRadiusMeters || 5000,
-        other.user.maxRadiusMeters || 5000
-      );
+      const bothHaveCoords = candHasCoords && otherHasCoords;
 
-      // Distance check: must be within max allowed distance (default 5 km)
-      // If either user doesn't have GPS coordinates (lat/lng = 0), allow connecting
-      const hasCoords =
-        (candidateEntry.user.lat !== 0 || candidateEntry.user.lng !== 0) &&
-        (other.user.lat !== 0 || other.user.lng !== 0);
+      let distance = 0;
+      let hasPreciseDistance = false;
 
-      if (hasCoords && distance > maxAllowedDistance) {
-        continue;
+      if (bothHaveCoords) {
+        // 2. Proximity calculation (Haversine formula)
+        distance = haversineDistanceMeters(candLat, candLng, otherLat, otherLng);
+        hasPreciseDistance = true;
+
+        const maxAllowedDistance = Math.min(
+          candidateEntry.user.maxRadiusMeters || 5000,
+          other.user.maxRadiusMeters || 5000
+        );
+
+        // Distance check: must be within max allowed distance (default 5 km)
+        if (distance > maxAllowedDistance) {
+          continue;
+        }
+      } else {
+        // Fallback: When coordinates are missing, permit match without calculating distance against (0,0) Null Island
+        distance = 0;
+        hasPreciseDistance = false;
       }
 
       const lastMatchedTime = this.getLastMatchedTime(candidateId, otherId);
@@ -275,6 +306,7 @@ export class CampusMatcherDO extends DurableObject<Env> {
         otherId,
         other,
         distance,
+        hasPreciseDistance,
         lastMatchedTime,
       });
     }
@@ -284,12 +316,16 @@ export class CampusMatcherDO extends DurableObject<Env> {
     // Rank candidates by Circular Fair Matching:
     // 1. Unseen users (never matched in session: lastMatchedTime === null) come first.
     // 2. If all eligible users were matched, pick the one matched FURTHEST in the past (earliest lastMatchedTime).
-    // 3. Tie-breaker: Earlier queue arrival time.
+    // 3. Tie-breaker: Closer peers when distance is known, then earlier queue arrival time.
     eligibleMatches.sort((a, b) => {
       if (a.lastMatchedTime === null && b.lastMatchedTime !== null) return -1;
       if (a.lastMatchedTime !== null && b.lastMatchedTime === null) return 1;
 
       if (a.lastMatchedTime === null && b.lastMatchedTime === null) {
+        if (a.hasPreciseDistance && b.hasPreciseDistance) {
+          const distDiff = a.distance - b.distance;
+          if (Math.abs(distDiff) > 50) return distDiff;
+        }
         return a.other.user.queuedAt - b.other.user.queuedAt;
       }
 
@@ -315,10 +351,13 @@ export class CampusMatcherDO extends DurableObject<Env> {
     // Record interaction timestamp for circular tie-breaker memory
     this.recordMatch(candidateId, best.otherId);
 
+    const calculatedDistance = Math.round(best.distance);
+
     const matchPayloadA = JSON.stringify({
       type: "match_found",
       matchId,
-      distanceMeters: Math.round(best.distance),
+      distanceMeters: calculatedDistance,
+      hasPreciseDistance: best.hasPreciseDistance,
       partner: {
         userId: best.other.user.userId,
         displayName: best.other.user.displayName,
@@ -328,7 +367,8 @@ export class CampusMatcherDO extends DurableObject<Env> {
     const matchPayloadB = JSON.stringify({
       type: "match_found",
       matchId,
-      distanceMeters: Math.round(best.distance),
+      distanceMeters: calculatedDistance,
+      hasPreciseDistance: best.hasPreciseDistance,
       partner: {
         userId: candidateEntry.user.userId,
         displayName: candidateEntry.user.displayName,

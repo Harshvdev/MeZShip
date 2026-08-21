@@ -49,6 +49,7 @@ export interface PartnerInfo {
   userId: string;
   displayName: string;
   distanceMeters: number;
+  hasPreciseDistance?: boolean;
   campusId?: string;
 }
 
@@ -71,6 +72,8 @@ export function useChatSocket(
 
   const wsRef = useRef<WebSocket | null>(null);
   const currentRadiusRef = useRef<number>(5000);
+  const userLatRef = useRef<number | null>(userLat);
+  const userLngRef = useRef<number | null>(userLng);
   const activeMatchIdRef = useRef<string | null>(null);
   const autoReconnectTimerRef = useRef<any>(null);
   const pingIntervalRef = useRef<any>(null);
@@ -81,6 +84,33 @@ export function useChatSocket(
   const isClientTypingRef = useRef<boolean>(false);
   const lastTypingSentRef = useRef<number>(0);
   const pendingAcksRef = useRef<Map<string, any>>(new Map());
+
+  // Keep refs synced and broadcast location updates while waiting in queue
+  useEffect(() => {
+    userLatRef.current = userLat;
+    userLngRef.current = userLng;
+
+    if (
+      wsRef.current &&
+      wsRef.current.readyState === WebSocket.OPEN &&
+      chatState === "SEARCHING" &&
+      userLat !== null &&
+      userLng !== null
+    ) {
+      try {
+        wsRef.current.send(
+          JSON.stringify({
+            type: "update_location",
+            lat: userLat,
+            lng: userLng,
+            radius: currentRadiusRef.current,
+          })
+        );
+      } catch (err) {
+        console.error("Failed to send update_location:", err);
+      }
+    }
+  }, [userLat, userLng, chatState]);
 
   const getWsBaseUrl = (path: string) => {
     const cleanPath = path.startsWith("/") ? path : `/${path}`;
@@ -436,11 +466,14 @@ export function useChatSocket(
       const radiusKm = (radius / 1000).toFixed(0);
       setStatusMessage(`Searching for nearby users within ${radiusKm} km...`);
 
+      const latToSend = userLatRef.current ?? userLat ?? 0;
+      const lngToSend = userLngRef.current ?? userLng ?? 0;
+
       const wsUrl = `${getWsBaseUrl("/ws/queue")}?userId=${encodeURIComponent(
         userId
       )}&displayName=${encodeURIComponent(
         displayName || "Anonymous"
-      )}&lat=${userLat || 0}&lng=${userLng || 0}&radius=${radius}&token=${encodeURIComponent(token || "")}`;
+      )}&lat=${latToSend}&lng=${lngToSend}&radius=${radius}&token=${encodeURIComponent(token || "")}`;
 
       const ws = new WebSocket(wsUrl);
       wsRef.current = ws;
@@ -464,6 +497,8 @@ export function useChatSocket(
               matchId: data.matchId,
               partnerUserId: data.partner.userId,
               partnerDisplayName: data.partner.displayName,
+              distanceMeters: data.distanceMeters,
+              hasPreciseDistance: data.hasPreciseDistance,
               campusId: data.campusId || "nearby",
               matchedAt: Date.now(),
             });
@@ -472,6 +507,7 @@ export function useChatSocket(
               userId: data.partner.userId,
               displayName: data.partner.displayName,
               distanceMeters: data.distanceMeters,
+              hasPreciseDistance: data.hasPreciseDistance,
               campusId: data.campusId,
             });
             connectToRoom(data.matchId);

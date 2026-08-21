@@ -13,16 +13,84 @@ export interface GeoLocationState {
 }
 
 const STORAGE_KEY = "mezship_calibrated_location";
+const CACHED_AUTO_KEY = "mezship_cached_auto_location";
+const CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
 
 export function useGeolocation() {
-  const [location, setLocation] = useState<GeoLocationState>({
-    lat: null,
-    lng: null,
-    accuracy: null,
-    error: null,
-    loading: true,
-    isCalibrated: false,
-    locationName: null,
+  const [location, setLocation] = useState<GeoLocationState>(() => {
+    if (typeof window === "undefined") {
+      return {
+        lat: null,
+        lng: null,
+        accuracy: null,
+        error: null,
+        loading: true,
+        isCalibrated: false,
+        locationName: null,
+      };
+    }
+
+    // 1. Check calibrated location first
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (typeof parsed.lat === "number" && typeof parsed.lng === "number") {
+          let cleanName = parsed.locationName || "Calibrated Location";
+          if (
+            typeof cleanName === "string" &&
+            (cleanName.toLowerCase().includes("campus") ||
+              cleanName.toLowerCase().includes("institute") ||
+              cleanName.toLowerCase().includes("college") ||
+              cleanName.toLowerCase().includes("university"))
+          ) {
+            cleanName = "Calibrated Location";
+          }
+          return {
+            lat: parsed.lat,
+            lng: parsed.lng,
+            accuracy: 10,
+            error: null,
+            loading: false,
+            isCalibrated: true,
+            locationName: cleanName,
+          };
+        }
+      }
+    } catch {}
+
+    // 2. Check recently cached auto-detected location
+    try {
+      const cached = sessionStorage.getItem(CACHED_AUTO_KEY);
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (
+          typeof parsed.lat === "number" &&
+          typeof parsed.lng === "number" &&
+          Date.now() - (parsed.timestamp || 0) < CACHE_TTL_MS
+        ) {
+          return {
+            lat: parsed.lat,
+            lng: parsed.lng,
+            accuracy: parsed.accuracy || 15,
+            error: null,
+            loading: false,
+            isCalibrated: false,
+            locationName: "Auto-detected GPS / Network",
+          };
+        }
+      }
+    } catch {}
+
+    return {
+      lat: null,
+      lng: null,
+      accuracy: null,
+      error: null,
+      loading: true,
+      isCalibrated: false,
+      locationName: null,
+    };
   });
 
   const requestBrowserLocation = useCallback((forceFresh = false) => {
@@ -41,14 +109,30 @@ export function useGeolocation() {
       return;
     }
 
-    setLocation((prev) => ({ ...prev, loading: true, error: null }));
+    setLocation((prev) => ({ ...prev, loading: prev.lat === null, error: null }));
 
     navigator.geolocation.getCurrentPosition(
       (position) => {
+        const lat = position.coords.latitude;
+        const lng = position.coords.longitude;
+        const accuracy = position.coords.accuracy;
+
+        try {
+          sessionStorage.setItem(
+            CACHED_AUTO_KEY,
+            JSON.stringify({
+              lat,
+              lng,
+              accuracy,
+              timestamp: Date.now(),
+            })
+          );
+        } catch {}
+
         setLocation({
-          lat: position.coords.latitude,
-          lng: position.coords.longitude,
-          accuracy: position.coords.accuracy,
+          lat,
+          lng,
+          accuracy,
           error: null,
           loading: false,
           isCalibrated: false,
@@ -59,7 +143,10 @@ export function useGeolocation() {
         console.warn("Geolocation permission error/denied:", error.message);
         setLocation((prev) => ({
           ...prev,
-          error: "Location access denied or unavailable. You can set custom coordinates in Location Settings.",
+          error:
+            prev.lat !== null
+              ? null
+              : "Location access denied or unavailable. You can set custom coordinates in Location Settings.",
           loading: false,
         }));
       },
@@ -115,13 +202,12 @@ export function useGeolocation() {
   useEffect(() => {
     if (typeof window === "undefined") return;
 
-    // Check if user previously calibrated their location (e.g. for desktop IP fixes)
+    // Check if user previously calibrated their location
     try {
       const saved = localStorage.getItem(STORAGE_KEY);
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (parsed.lat && parsed.lng) {
-          // Clean legacy campus / college names if present in localStorage
+        if (typeof parsed.lat === "number" && typeof parsed.lng === "number") {
           let cleanName = parsed.locationName || "Calibrated Location";
           if (
             typeof cleanName === "string" &&

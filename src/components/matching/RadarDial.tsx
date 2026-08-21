@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { Radio, X, MapPin } from "lucide-react";
+import { formatDistance } from "@/lib/distance";
 
 interface RadarDialProps {
   radiusKm: number;
@@ -415,7 +416,7 @@ export function RadarDial({
                 fill="#FFB238"
                 className="font-mono text-[10px] font-bold"
               >
-                ~{partnerDistanceMeters ?? 150}m
+                {formatDistance(partnerDistanceMeters)}
               </text>
             </g>
           )}

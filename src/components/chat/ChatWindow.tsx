@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from "react";
 import { Send, MapPin, Radio, ShieldAlert, UserX, LogOut, MoreVertical, SkipForward } from "lucide-react";
 import { MessageBubble } from "./MessageBubble";
 import type { ChatMessage, PartnerInfo } from "@/hooks/useChatSocket";
+import { formatDistance } from "@/lib/distance";
 
 interface ChatWindowProps {
   partner: PartnerInfo | null;
@@ -97,7 +98,7 @@ export function ChatWindow({
             <span className="text-ash font-mono text-xs">·</span>
             <span className="font-mono text-xs text-signal shrink-0 flex items-center gap-1">
               <MapPin className="w-3 h-3 inline" />
-              ~{partner?.distanceMeters ?? 150}m
+              {formatDistance(partner?.distanceMeters, partner?.hasPreciseDistance)}
             </span>
             <span className="text-ash font-mono text-xs">·</span>
             <span className="font-mono text-xs text-ash shrink-0">

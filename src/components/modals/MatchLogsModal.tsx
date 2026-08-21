@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { X, Clock, ShieldAlert, Ban, Check, Trash2, MapPin, MessageSquare, Radio } from "lucide-react";
 import { getMatchLogs, clearMatchLogs, type MatchLogEntry } from "@/lib/matchLogs";
+import { formatDistance } from "@/lib/distance";
 
 interface MatchLogsModalProps {
   isOpen: boolean;
@@ -109,7 +110,7 @@ export function MatchLogsModal({
                       <div className="flex items-center gap-2 font-mono text-[11px] text-ash">
                         <span className="flex items-center gap-1 text-signal">
                           <MapPin className="w-3 h-3" />
-                          ~{(log as any).distanceMeters ?? 150}m
+                          {formatDistance(log.distanceMeters, log.hasPreciseDistance)}
                         </span>
                         <span>·</span>
                         <span>{formatTimeAgo(log.matchedAt)}</span>

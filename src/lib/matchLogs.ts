@@ -4,6 +4,8 @@ export interface MatchLogEntry {
   partnerDisplayName: string;
   campusId: string;
   matchedAt: number;
+  distanceMeters?: number;
+  hasPreciseDistance?: boolean;
   endedAt?: number;
   leaveReason?: "skip" | "leave" | "disconnect" | "self_skip" | "self_leave";
   reported?: boolean;
