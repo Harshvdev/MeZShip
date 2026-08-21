@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { X, Clock, ShieldAlert, Ban, Check, Trash2, MapPin, MessageSquare, Radio } from "lucide-react";
-import { getMatchLogs, clearMatchLogs, type MatchLogEntry } from "@/lib/matchLogs";
+import { getMatchLogs, clearMatchLogs, getReportedUserIds, type MatchLogEntry } from "@/lib/matchLogs";
 import { formatDistance } from "@/lib/distance";
 
 interface MatchLogsModalProps {
@@ -19,12 +19,14 @@ export function MatchLogsModal({
   onBlockUser,
 }: MatchLogsModalProps) {
   const [logs, setLogs] = useState<MatchLogEntry[]>([]);
+  const [reportedUserIds, setReportedUserIds] = useState<string[]>([]);
   const [blockedUserIds, setBlockedUserIds] = useState<string[]>([]);
   const [blockingId, setBlockingId] = useState<string | null>(null);
 
   useEffect(() => {
     if (isOpen) {
       setLogs(getMatchLogs());
+      setReportedUserIds(Array.from(getReportedUserIds()));
     }
   }, [isOpen]);
 
@@ -93,6 +95,7 @@ export function MatchLogsModal({
           ) : (
             logs.map((log) => {
               const isBlocked = blockedUserIds.includes(log.partnerUserId);
+              const isReported = Boolean(log.reported || reportedUserIds.includes(log.partnerUserId));
 
               return (
                 <div
@@ -120,20 +123,31 @@ export function MatchLogsModal({
 
                   {/* Actions */}
                   <div className="flex items-center gap-1.5 shrink-0 self-end sm:self-center">
-                    <button
-                      type="button"
-                      onClick={() =>
-                        onOpenReportForPastMatch(
-                          log.matchId,
-                          log.partnerUserId,
-                          log.partnerDisplayName
-                        )
-                      }
-                      className="px-2.5 py-1 rounded bg-surface hover:bg-alert/15 border border-line hover:border-alert/30 text-ash hover:text-alert text-xs font-mono transition-colors flex items-center gap-1"
-                    >
-                      <ShieldAlert className="w-3.5 h-3.5" />
-                      <span>Report</span>
-                    </button>
+                    {isReported ? (
+                      <button
+                        type="button"
+                        disabled
+                        className="px-2.5 py-1 rounded bg-alert/15 border border-alert/30 text-alert text-xs font-mono transition-colors flex items-center gap-1 cursor-default opacity-80"
+                      >
+                        <Check className="w-3.5 h-3.5 text-alert" />
+                        <span>Reported</span>
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          onOpenReportForPastMatch(
+                            log.matchId,
+                            log.partnerUserId,
+                            log.partnerDisplayName
+                          )
+                        }
+                        className="px-2.5 py-1 rounded bg-surface hover:bg-alert/15 border border-line hover:border-alert/30 text-ash hover:text-alert text-xs font-mono transition-colors flex items-center gap-1"
+                      >
+                        <ShieldAlert className="w-3.5 h-3.5" />
+                        <span>Report</span>
+                      </button>
+                    )}
 
                     <button
                       type="button"

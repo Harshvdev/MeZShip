@@ -78,6 +78,41 @@ export function markMatchReported(matchId: string): void {
   }
 }
 
+export function markUserReported(partnerUserId: string): void {
+  if (typeof window === "undefined") return;
+  try {
+    const logs = getMatchLogs();
+    let updated = false;
+    for (const log of logs) {
+      if (log.partnerUserId === partnerUserId) {
+        log.reported = true;
+        updated = true;
+      }
+    }
+    if (updated) {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(logs));
+    }
+  } catch (e) {
+    console.error("Failed to mark user reported:", e);
+  }
+}
+
+export function getReportedUserIds(): Set<string> {
+  if (typeof window === "undefined") return new Set();
+  try {
+    const logs = getMatchLogs();
+    const reported = new Set<string>();
+    for (const log of logs) {
+      if (log.reported && log.partnerUserId) {
+        reported.add(log.partnerUserId);
+      }
+    }
+    return reported;
+  } catch {
+    return new Set();
+  }
+}
+
 export function clearMatchLogs(): void {
   if (typeof window === "undefined") return;
   try {

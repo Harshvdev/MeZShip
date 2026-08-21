@@ -135,6 +135,32 @@ export class MatchRoomDO extends DurableObject<Env> {
       });
     }
 
+    // 3. Room termination endpoint when reported or blocked
+    if (url.pathname === "/end_room" && request.method === "POST") {
+      try {
+        const body: { reason?: string; initiatorId?: string } = await request.json();
+        const matchCtx = await this.getMatchContext();
+        if (matchCtx && !matchCtx.endedAt) {
+          matchCtx.endedAt = Date.now();
+          await this.ctx.storage.put("matchContext", matchCtx);
+        }
+        this.broadcast({
+          type: "partner_skipped",
+          reason: body.reason === "reported" ? "leave" : "disconnect",
+          message: "The chat session has ended.",
+        });
+        const sockets = this.ctx.getWebSockets();
+        for (const ws of sockets) {
+          try {
+            ws.close(1000, "Session ended");
+          } catch {}
+        }
+        return new Response(JSON.stringify({ success: true }));
+      } catch (e) {
+        return new Response(JSON.stringify({ success: false, error: String(e) }), { status: 500 });
+      }
+    }
+
     return new Response("MatchRoomDO Active", { status: 200 });
   }
 

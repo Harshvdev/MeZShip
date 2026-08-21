@@ -2,7 +2,13 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import type { WebSocketServerMessage, ReportReason } from "@/lib/protocol";
-import { saveMatchLog, updateMatchLogEnd, markMatchReported } from "@/lib/matchLogs";
+import {
+  saveMatchLog,
+  updateMatchLogEnd,
+  markMatchReported,
+  markUserReported,
+  getReportedUserIds,
+} from "@/lib/matchLogs";
 import { getApiUrl } from "@/lib/api";
 
 export type ChatState =
@@ -84,6 +90,30 @@ export function useChatSocket(
   const isClientTypingRef = useRef<boolean>(false);
   const lastTypingSentRef = useRef<number>(0);
   const pendingAcksRef = useRef<Map<string, any>>(new Map());
+
+  // Exclusion refs: session-scoped reports and persistent blocks
+  const sessionReportedUsersRef = useRef<Set<string>>(new Set());
+  const blockedUserIdsRef = useRef<Set<string>>(new Set());
+
+  // Fetch blocked users when token is available
+  useEffect(() => {
+    if (token) {
+      fetch(getApiUrl("/api/blocks"), {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+        .then((res) => (res.ok ? (res.json() as Promise<{ blocks?: Array<{ blocked_user_id: string }> }>) : null))
+        .then((data) => {
+          if (data?.blocks && Array.isArray(data.blocks)) {
+            for (const b of data.blocks) {
+              if (b.blocked_user_id) {
+                blockedUserIdsRef.current.add(b.blocked_user_id);
+              }
+            }
+          }
+        })
+        .catch(() => {});
+    }
+  }, [token]);
 
   // Keep refs synced and broadcast location updates while waiting in queue
   useEffect(() => {
@@ -279,7 +309,16 @@ export function useChatSocket(
       const ws = new WebSocket(wsUrl);
       wsRef.current = ws;
 
+      const connectionWatchdog = setTimeout(() => {
+        if (ws.readyState !== WebSocket.OPEN) {
+          console.warn("Room connection timed out. Reconnecting to queue...");
+          closeCurrentSocket();
+          startMatching(currentRadiusRef.current);
+        }
+      }, 8000);
+
       ws.onopen = () => {
+        clearTimeout(connectionWatchdog);
         startHeartbeat(ws);
       };
 
@@ -413,6 +452,7 @@ export function useChatSocket(
       };
 
       ws.onclose = (event) => {
+        clearTimeout(connectionWatchdog);
         setIsPartnerTyping(false);
         setMessages((prev) =>
           prev.map((m) => (m.status === "sending" ? { ...m, status: "failed" } : m))
@@ -421,7 +461,7 @@ export function useChatSocket(
         pendingAcksRef.current.clear();
 
         setChatState((prev) => {
-          if (prev === "MATCHED") {
+          if (prev === "MATCHED" || prev === "SEARCHING") {
             setStatusMessage("Disconnected from room. Finding next partner...");
             if (activeMatchIdRef.current) {
               updateMatchLogEnd(activeMatchIdRef.current, "disconnect");
@@ -429,7 +469,7 @@ export function useChatSocket(
             if (autoReconnectTimerRef.current) clearTimeout(autoReconnectTimerRef.current);
             autoReconnectTimerRef.current = setTimeout(() => {
               startMatching(currentRadiusRef.current);
-            }, 250);
+            }, 300);
 
             return "PARTNER_SKIPPED";
           }
@@ -438,12 +478,25 @@ export function useChatSocket(
       };
 
       ws.onerror = (err) => {
+        clearTimeout(connectionWatchdog);
         console.error("Room WS error:", err);
         setMessages((prev) =>
           prev.map((m) => (m.status === "sending" ? { ...m, status: "failed" } : m))
         );
         pendingAcksRef.current.forEach((t) => clearTimeout(t));
         pendingAcksRef.current.clear();
+
+        setChatState((prev) => {
+          if (prev === "MATCHED" || prev === "SEARCHING") {
+            setStatusMessage("Room connection error. Searching for next match...");
+            if (autoReconnectTimerRef.current) clearTimeout(autoReconnectTimerRef.current);
+            autoReconnectTimerRef.current = setTimeout(() => {
+              startMatching(currentRadiusRef.current);
+            }, 500);
+            return "PARTNER_SKIPPED";
+          }
+          return prev;
+        });
       };
     },
     [userId, displayName, token, closeCurrentSocket, startHeartbeat]
@@ -469,11 +522,14 @@ export function useChatSocket(
       const latToSend = userLatRef.current ?? userLat ?? 0;
       const lngToSend = userLngRef.current ?? userLng ?? 0;
 
+      const excludeIds = Array.from(sessionReportedUsersRef.current).filter(Boolean);
+      const excludeParam = excludeIds.length > 0 ? `&excludeUserIds=${encodeURIComponent(excludeIds.join(","))}` : "";
+
       const wsUrl = `${getWsBaseUrl("/ws/queue")}?userId=${encodeURIComponent(
         userId
       )}&displayName=${encodeURIComponent(
         displayName || "Anonymous"
-      )}&lat=${latToSend}&lng=${lngToSend}&radius=${radius}&token=${encodeURIComponent(token || "")}`;
+      )}&lat=${latToSend}&lng=${lngToSend}&radius=${radius}&token=${encodeURIComponent(token || "")}${excludeParam}`;
 
       const ws = new WebSocket(wsUrl);
       wsRef.current = ws;
@@ -490,6 +546,22 @@ export function useChatSocket(
           if (data.type === "pong") return;
 
           if (data.type === "match_found") {
+            const partnerId = data.partner?.userId;
+
+            // Defense-in-depth: client-side guard against matching excluded users
+            if (
+              partnerId &&
+              (sessionReportedUsersRef.current.has(partnerId) ||
+                blockedUserIdsRef.current.has(partnerId))
+            ) {
+              console.warn(
+                `Ignoring match_found for excluded user ${partnerId}. Re-queuing...`
+              );
+              closeCurrentSocket();
+              startMatching(currentRadiusRef.current);
+              return;
+            }
+
             setCurrentMatchId(data.matchId);
             activeMatchIdRef.current = data.matchId;
 
@@ -645,6 +717,27 @@ export function useChatSocket(
     async (targetId?: string) => {
       const idToBlock = targetId || partner?.userId;
       if (!idToBlock || !token) return false;
+
+      blockedUserIdsRef.current.add(idToBlock);
+
+      const isCurrentPartner = !targetId || targetId === partner?.userId;
+
+      if (isCurrentPartner) {
+        if (activeMatchIdRef.current) {
+          updateMatchLogEnd(activeMatchIdRef.current, "self_skip");
+        }
+        if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+          try {
+            wsRef.current.send(JSON.stringify({ type: "leave" }));
+          } catch {}
+        }
+        closeCurrentSocket();
+        setChatState("IDLE");
+        setPartner(null);
+        setCurrentMatchId(null);
+        setMessages([]);
+      }
+
       try {
         const res = await fetch(getApiUrl("/api/blocks"), {
           method: "POST",
@@ -654,9 +747,10 @@ export function useChatSocket(
           },
           body: JSON.stringify({ targetUserId: idToBlock }),
         });
+
         if (res.ok) {
-          if (!targetId || targetId === partner?.userId) {
-            skip();
+          if (isCurrentPartner) {
+            startMatching(currentRadiusRef.current);
           }
           return true;
         }
@@ -665,12 +759,36 @@ export function useChatSocket(
         return false;
       }
     },
-    [partner?.userId, token, skip]
+    [partner?.userId, token, closeCurrentSocket, startMatching]
   );
 
   const reportPartner = useCallback(
     async (reason: ReportReason, details?: string) => {
-      if (!partner?.userId || !currentMatchId || !token) return false;
+      const reportedUserId = partner?.userId;
+      const reportedMatchId = currentMatchId;
+      if (!reportedUserId || !reportedMatchId || !token) return false;
+
+      // 1. Immediately track as reported in session so user cannot be rematched
+      sessionReportedUsersRef.current.add(reportedUserId);
+      markMatchReported(reportedMatchId);
+      markUserReported(reportedUserId);
+
+      // 2. Cleanly end current room connection
+      if (activeMatchIdRef.current) {
+        updateMatchLogEnd(activeMatchIdRef.current, "self_skip");
+      }
+      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+        try {
+          wsRef.current.send(JSON.stringify({ type: "leave" }));
+        } catch {}
+      }
+      closeCurrentSocket();
+      setChatState("IDLE");
+      setPartner(null);
+      setCurrentMatchId(null);
+      setMessages([]);
+      setStatusMessage("Submitting safety report...");
+
       try {
         const res = await fetch(getApiUrl("/api/reports"), {
           method: "POST",
@@ -679,29 +797,36 @@ export function useChatSocket(
             Authorization: `Bearer ${token}`,
           },
           body: JSON.stringify({
-            reportedUserId: partner.userId,
-            matchId: currentMatchId,
+            reportedUserId,
+            matchId: reportedMatchId,
             reason,
             details,
           }),
         });
 
-        if (res.ok) {
-          markMatchReported(currentMatchId);
-          skip();
+        if (res.ok || res.status === 409) {
+          startMatching(currentRadiusRef.current);
           return true;
+        } else {
+          setStatusMessage("Report failed to submit.");
+          return false;
         }
-        return false;
-      } catch {
+      } catch (err) {
+        console.error("Report submit error:", err);
+        startMatching(currentRadiusRef.current);
         return false;
       }
     },
-    [partner?.userId, currentMatchId, token, skip]
+    [partner?.userId, currentMatchId, token, closeCurrentSocket, startMatching]
   );
 
   const reportPastMatch = useCallback(
     async (matchId: string, reportedUserId: string, reason: ReportReason, details?: string) => {
       if (!token) return false;
+      sessionReportedUsersRef.current.add(reportedUserId);
+      markMatchReported(matchId);
+      markUserReported(reportedUserId);
+
       try {
         const res = await fetch(getApiUrl("/api/reports"), {
           method: "POST",
@@ -717,11 +842,7 @@ export function useChatSocket(
           }),
         });
 
-        if (res.ok) {
-          markMatchReported(matchId);
-          return true;
-        }
-        return false;
+        return res.ok || res.status === 409;
       } catch {
         return false;
       }

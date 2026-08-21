@@ -1,6 +1,7 @@
 import { DurableObject } from "cloudflare:workers";
 import type { Env, WaitingUser } from "../types";
 import { haversineDistanceMeters } from "../lib/geo";
+import { getPrisma } from "../lib/db";
 
 interface QueueEntry {
   ws: WebSocket;
@@ -9,11 +10,25 @@ interface QueueEntry {
 
 export class CampusMatcherDO extends DurableObject<Env> {
   private presence: Map<string, number> = new Map(); // userId -> lastSeen timestamp
-  private blockPairs: Set<string> = new Set(); // "blocker:blocked"
+  private blockPairs: Set<string> = new Set(); // in-memory active blocks & session report exclusions ("blocker:blocked")
+  private persistentBlocks: Set<string> = new Set(); // persistent blocks stored in DO storage
   private matchHistory: Map<string, Map<string, number>> = new Map(); // userId -> (partnerId -> timestamp)
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
+
+    // Hydrate persistent blocks from Durable Object SQLite storage
+    this.ctx.blockConcurrencyWhile(async () => {
+      try {
+        const saved = (await this.ctx.storage.get<string[]>("persisted_blocks")) || [];
+        for (const pair of saved) {
+          this.persistentBlocks.add(pair);
+          this.blockPairs.add(pair);
+        }
+      } catch (e) {
+        console.error("Failed to load persisted blocks in CampusMatcherDO:", e);
+      }
+    });
   }
 
   private cleanPresence() {
@@ -55,6 +70,37 @@ export class CampusMatcherDO extends DurableObject<Env> {
   }
 
   /**
+   * Sync persistent blocks involving a specific user from Postgres
+   */
+  private async syncUserBlocksFromDb(userId: string): Promise<void> {
+    try {
+      const prisma = getPrisma(this.env);
+      const blocks = await prisma.userBlock.findMany({
+        where: {
+          OR: [{ blocker_user_id: userId }, { blocked_user_id: userId }],
+        },
+        select: { blocker_user_id: true, blocked_user_id: true },
+      });
+
+      let changed = false;
+      for (const b of blocks) {
+        const key = `${b.blocker_user_id}:${b.blocked_user_id}`;
+        if (!this.persistentBlocks.has(key)) {
+          this.persistentBlocks.add(key);
+          this.blockPairs.add(key);
+          changed = true;
+        }
+      }
+
+      if (changed) {
+        await this.ctx.storage.put("persisted_blocks", Array.from(this.persistentBlocks));
+      }
+    } catch (e) {
+      console.error("Error syncing user blocks from DB:", e);
+    }
+  }
+
+  /**
    * Retrieves active waiting users from WebSockets across DO hibernations
    */
   private getWaitingEntries(): QueueEntry[] {
@@ -87,6 +133,8 @@ export class CampusMatcherDO extends DurableObject<Env> {
       const lng = Number.isFinite(parsedLng) ? parsedLng : 0;
       const parsedRadius = parseFloat(url.searchParams.get("radius") || "5000");
       const maxRadiusMeters = Number.isFinite(parsedRadius) && parsedRadius > 0 ? parsedRadius : 5000;
+      const rawExclude = url.searchParams.get("excludeUserIds") || "";
+      const excludeUserIds = rawExclude ? rawExclude.split(",").map((id) => id.trim()).filter(Boolean) : [];
 
       if (!userId) {
         return new Response("Missing userId", { status: 400 });
@@ -99,6 +147,7 @@ export class CampusMatcherDO extends DurableObject<Env> {
         lng,
         maxRadiusMeters,
         queuedAt: Date.now(),
+        excludeUserIds,
       };
 
       // Hibernation-safe attachment and acceptance
@@ -113,7 +162,7 @@ export class CampusMatcherDO extends DurableObject<Env> {
       const otherOnline = Math.max(0, totalOnline - 1);
 
       // Deliver queue welcome and attempt matching on the next microtask after 101 handshake completes
-      queueMicrotask(() => {
+      queueMicrotask(async () => {
         try {
           server.send(
             JSON.stringify({
@@ -124,6 +173,7 @@ export class CampusMatcherDO extends DurableObject<Env> {
               onlineCount: otherOnline,
             })
           );
+          await this.syncUserBlocksFromDb(userId);
           this.tryMatch(userId);
         } catch (e) {
           console.error("Match error in queueMicrotask:", e);
@@ -166,12 +216,60 @@ export class CampusMatcherDO extends DurableObject<Env> {
       );
     }
 
+    if (url.pathname === "/add_block" && request.method === "POST") {
+      try {
+        const { blocker, blocked } = (await request.json()) as { blocker: string; blocked: string };
+        if (blocker && blocked) {
+          const key = `${blocker}:${blocked}`;
+          this.persistentBlocks.add(key);
+          this.blockPairs.add(key);
+          await this.ctx.storage.put("persisted_blocks", Array.from(this.persistentBlocks));
+        }
+        return new Response(JSON.stringify({ success: true }));
+      } catch (e) {
+        return new Response(JSON.stringify({ success: false, error: String(e) }), { status: 500 });
+      }
+    }
+
+    if (url.pathname === "/remove_block" && request.method === "POST") {
+      try {
+        const { blocker, blocked } = (await request.json()) as { blocker: string; blocked: string };
+        if (blocker && blocked) {
+          const key = `${blocker}:${blocked}`;
+          this.persistentBlocks.delete(key);
+          this.blockPairs.delete(key);
+          await this.ctx.storage.put("persisted_blocks", Array.from(this.persistentBlocks));
+        }
+        return new Response(JSON.stringify({ success: true }));
+      } catch (e) {
+        return new Response(JSON.stringify({ success: false, error: String(e) }), { status: 500 });
+      }
+    }
+
+    if (url.pathname === "/add_report_exclusion" && request.method === "POST") {
+      try {
+        const { reporter, reported } = (await request.json()) as { reporter: string; reported: string };
+        if (reporter && reported) {
+          // Session-scoped exclusion in memory for this CampusMatcherDO instance
+          this.blockPairs.add(`${reporter}:${reported}`);
+          this.blockPairs.add(`${reported}:${reporter}`);
+        }
+        return new Response(JSON.stringify({ success: true }));
+      } catch (e) {
+        return new Response(JSON.stringify({ success: false, error: String(e) }), { status: 500 });
+      }
+    }
+
     if (url.pathname === "/update_blocks" && request.method === "POST") {
       const blocks: Array<{ blocker: string; blocked: string }> = await request.json();
-      this.blockPairs.clear();
       for (const b of blocks) {
-        this.blockPairs.add(`${b.blocker}:${b.blocked}`);
+        if (b.blocker && b.blocked) {
+          const key = `${b.blocker}:${b.blocked}`;
+          this.persistentBlocks.add(key);
+          this.blockPairs.add(key);
+        }
       }
+      await this.ctx.storage.put("persisted_blocks", Array.from(this.persistentBlocks));
       return new Response(JSON.stringify({ success: true }));
     }
 
@@ -261,7 +359,14 @@ export class CampusMatcherDO extends DurableObject<Env> {
       const otherId = other.user.userId;
       if (otherId === candidateId) continue;
 
-      // 1. Check blocking relationships
+      // 1. Check session-level exclusions and persistent blocking relationships
+      if (
+        (candidateEntry.user.excludeUserIds && candidateEntry.user.excludeUserIds.includes(otherId)) ||
+        (other.user.excludeUserIds && other.user.excludeUserIds.includes(candidateId))
+      ) {
+        continue;
+      }
+
       if (this.isBlocked(candidateId, otherId)) {
         continue;
       }
