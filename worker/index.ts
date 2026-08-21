@@ -98,11 +98,15 @@ export default {
           return new Response("Account is currently suspended", { status: 403 });
         }
 
+        // Ensure the verified authUser.userId is strictly set in the URL parameters
+        url.searchParams.set("userId", authUser.userId);
+        const forwardReq = new Request(url.toString(), request);
+
         if (url.pathname === "/ws/queue") {
           // Route to singleton CampusMatcherDO
           const matcherId = env.CAMPUS_MATCHER.idFromName("global_campus_matcher");
           const matcher = env.CAMPUS_MATCHER.get(matcherId);
-          return await matcher.fetch(request);
+          return await matcher.fetch(forwardReq);
         }
 
         if (url.pathname.startsWith("/ws/room/")) {
@@ -111,7 +115,7 @@ export default {
 
           const roomId = env.MATCH_ROOM.idFromName(matchId);
           const room = env.MATCH_ROOM.get(roomId);
-          return await room.fetch(request);
+          return await room.fetch(forwardReq);
         }
 
         return new Response("Invalid WebSocket endpoint", { status: 404 });
@@ -304,6 +308,21 @@ export default {
           },
         });
 
+        // Notify CampusMatcherDO
+        try {
+          const matcherId = env.CAMPUS_MATCHER.idFromName("global_campus_matcher");
+          const matcher = env.CAMPUS_MATCHER.get(matcherId);
+          await matcher.fetch(
+            new Request("http://internal/add_block", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ blocker: authUser.userId, blocked: body.targetUserId }),
+            })
+          );
+        } catch (e) {
+          console.error("Failed to notify matcher of add_block:", e);
+        }
+
         return jsonResponse({ success: true });
       }
     }
@@ -316,6 +335,22 @@ export default {
           blocked_user_id: blockedUserId,
         },
       });
+
+      // Notify CampusMatcherDO
+      try {
+        const matcherId = env.CAMPUS_MATCHER.idFromName("global_campus_matcher");
+        const matcher = env.CAMPUS_MATCHER.get(matcherId);
+        await matcher.fetch(
+          new Request("http://internal/remove_block", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ blocker: authUser.userId, blocked: blockedUserId }),
+          })
+        );
+      } catch (e) {
+        console.error("Failed to notify matcher of remove_block:", e);
+      }
+
       return jsonResponse({ success: true });
     }
 
@@ -390,6 +425,34 @@ export default {
           details: details ? details.trim() : null,
         },
       });
+
+      // Add session report exclusion to CampusMatcherDO so they never match during this session
+      try {
+        const matcherId = env.CAMPUS_MATCHER.idFromName("global_campus_matcher");
+        const matcher = env.CAMPUS_MATCHER.get(matcherId);
+        await matcher.fetch(
+          new Request("http://internal/add_report_exclusion", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ reporter: authUser.userId, reported: reportedUserId }),
+          })
+        );
+      } catch (e) {
+        console.error("Failed to notify matcher of report exclusion:", e);
+      }
+
+      // Cleanly terminate the active room session
+      try {
+        await room.fetch(
+          new Request("https://internal/end_room", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ reason: "reported", initiatorId: authUser.userId }),
+          })
+        );
+      } catch (e) {
+        console.error("Failed to terminate match room on report:", e);
+      }
 
       // Calculate total lifetime distinct reporters for this target
       const distinctCount = await prisma.report.count({

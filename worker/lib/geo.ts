@@ -40,6 +40,20 @@ export function haversineDistanceMeters(
   lat2: number,
   lon2: number
 ): number {
+  if (
+    !Number.isFinite(lat1) ||
+    !Number.isFinite(lon1) ||
+    !Number.isFinite(lat2) ||
+    !Number.isFinite(lon2)
+  ) {
+    return 0;
+  }
+
+  // Exactly identical coordinates
+  if (lat1 === lat2 && lon1 === lon2) {
+    return 0;
+  }
+
   const R = 6371e3; // Earth radius in meters
   const phi1 = (lat1 * Math.PI) / 180;
   const phi2 = (lat2 * Math.PI) / 180;
@@ -52,7 +66,8 @@ export function haversineDistanceMeters(
       Math.cos(phi2) *
       Math.sin(deltaLambda / 2) *
       Math.sin(deltaLambda / 2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  const aClamped = Math.min(1, Math.max(0, a));
+  const c = 2 * Math.atan2(Math.sqrt(aClamped), Math.sqrt(1 - aClamped));
 
   return R * c;
 }

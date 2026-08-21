@@ -40,9 +40,6 @@ export class MatchRoomDO extends DurableObject<Env> {
 
     // 1. WebSocket Upgrade for active chat session
     if (request.headers.get("Upgrade") === "websocket") {
-      const pair = new WebSocketPair();
-      const [client, server] = Object.values(pair);
-
       const userId = url.searchParams.get("userId") || "";
       const displayName = url.searchParams.get("displayName") || "Anonymous";
       const matchId = url.searchParams.get("matchId") || "";
@@ -51,13 +48,14 @@ export class MatchRoomDO extends DurableObject<Env> {
         return new Response("Missing parameters", { status: 400 });
       }
 
-      // Persist unique socketId in attachment on server WebSocket for hibernation resilience
-      const socketId = `ws_${crypto.randomUUID()}`;
-      const attachment: SocketAttachment = { socketId, userId, displayName, matchId };
-      server.serializeAttachment(attachment);
-      this.ctx.acceptWebSocket(server, [userId, socketId]);
-
       let matchCtx = await this.getMatchContext();
+
+      // Check if match session has already ended
+      if (matchCtx && matchCtx.endedAt !== null) {
+        return new Response("Match session has already ended", { status: 410 });
+      }
+
+      // Check participant authorization & enforce strict 2-user capacity
       if (!matchCtx) {
         matchCtx = {
           matchId,
@@ -72,7 +70,27 @@ export class MatchRoomDO extends DurableObject<Env> {
         matchCtx.userB = userId;
         this.matchContext = matchCtx;
         await this.ctx.storage.put("matchContext", matchCtx);
+      } else if (userId !== matchCtx.userA && userId !== matchCtx.userB) {
+        return new Response("Unauthorized: Match room is full (maximum 2 participants)", { status: 403 });
       }
+
+      // Deduplicate active sockets for this user in this room (close any older socket for this user)
+      const existingSockets = this.ctx.getWebSockets(userId);
+      for (const oldWs of existingSockets) {
+        try {
+          oldWs.serializeAttachment(null);
+          oldWs.close(1000, "Replaced by newer room connection");
+        } catch {}
+      }
+
+      const pair = new WebSocketPair();
+      const [client, server] = Object.values(pair);
+
+      // Persist unique socketId in attachment on server WebSocket for hibernation resilience
+      const socketId = `ws_${crypto.randomUUID()}`;
+      const attachment: SocketAttachment = { socketId, userId, displayName, matchId };
+      server.serializeAttachment(attachment);
+      this.ctx.acceptWebSocket(server, [userId, socketId]);
 
       // If both participants are connected, broadcast connected notification on next microtask after 101 handshake completes
       queueMicrotask(() => {
@@ -85,7 +103,12 @@ export class MatchRoomDO extends DurableObject<Env> {
             })
           );
           const activeSockets = this.ctx.getWebSockets();
-          if (activeSockets.length >= 2) {
+          const uniqueUserIds = new Set<string>();
+          for (const s of activeSockets) {
+            const att = s.deserializeAttachment() as SocketAttachment | null;
+            if (att?.userId) uniqueUserIds.add(att.userId);
+          }
+          if (uniqueUserIds.size >= 2) {
             this.broadcast({
               type: "partner_connected",
               message: "You are now chatting! Say hello.",
@@ -135,6 +158,32 @@ export class MatchRoomDO extends DurableObject<Env> {
       });
     }
 
+    // 3. Room termination endpoint when reported or blocked
+    if (url.pathname === "/end_room" && request.method === "POST") {
+      try {
+        const body: { reason?: string; initiatorId?: string } = await request.json();
+        const matchCtx = await this.getMatchContext();
+        if (matchCtx && !matchCtx.endedAt) {
+          matchCtx.endedAt = Date.now();
+          await this.ctx.storage.put("matchContext", matchCtx);
+        }
+        this.broadcast({
+          type: "partner_skipped",
+          reason: body.reason === "reported" ? "leave" : "disconnect",
+          message: "The chat session has ended.",
+        });
+        const sockets = this.ctx.getWebSockets();
+        for (const ws of sockets) {
+          try {
+            ws.close(1000, "Session ended");
+          } catch {}
+        }
+        return new Response(JSON.stringify({ success: true }));
+      } catch (e) {
+        return new Response(JSON.stringify({ success: false, error: String(e) }), { status: 500 });
+      }
+    }
+
     return new Response("MatchRoomDO Active", { status: 200 });
   }
 
@@ -156,6 +205,10 @@ export class MatchRoomDO extends DurableObject<Env> {
       const senderId = senderTags[0] || attachment?.userId || "";
 
       if (!senderId) return;
+
+      const matchCtx = await this.getMatchContext();
+      if (!matchCtx || matchCtx.endedAt !== null) return;
+      if (senderId !== matchCtx.userA && senderId !== matchCtx.userB) return;
 
       if (data.type === "message") {
         const text = (data.text || "").trim();
