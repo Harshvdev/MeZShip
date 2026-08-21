@@ -98,11 +98,15 @@ export default {
           return new Response("Account is currently suspended", { status: 403 });
         }
 
+        // Ensure the verified authUser.userId is strictly set in the URL parameters
+        url.searchParams.set("userId", authUser.userId);
+        const forwardReq = new Request(url.toString(), request);
+
         if (url.pathname === "/ws/queue") {
           // Route to singleton CampusMatcherDO
           const matcherId = env.CAMPUS_MATCHER.idFromName("global_campus_matcher");
           const matcher = env.CAMPUS_MATCHER.get(matcherId);
-          return await matcher.fetch(request);
+          return await matcher.fetch(forwardReq);
         }
 
         if (url.pathname.startsWith("/ws/room/")) {
@@ -111,7 +115,7 @@ export default {
 
           const roomId = env.MATCH_ROOM.idFromName(matchId);
           const room = env.MATCH_ROOM.get(roomId);
-          return await room.fetch(request);
+          return await room.fetch(forwardReq);
         }
 
         return new Response("Invalid WebSocket endpoint", { status: 404 });

@@ -548,6 +548,12 @@ export function useChatSocket(
           if (data.type === "match_found") {
             const partnerId = data.partner?.userId;
 
+            // Clear any lingering reconnect timer
+            if (autoReconnectTimerRef.current) {
+              clearTimeout(autoReconnectTimerRef.current);
+              autoReconnectTimerRef.current = null;
+            }
+
             // Defense-in-depth: client-side guard against matching excluded users
             if (
               partnerId &&

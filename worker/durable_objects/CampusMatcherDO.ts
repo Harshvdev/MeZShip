@@ -101,20 +101,38 @@ export class CampusMatcherDO extends DurableObject<Env> {
   }
 
   /**
-   * Retrieves active waiting users from WebSockets across DO hibernations
+   * Retrieves active waiting users from WebSockets across DO hibernations,
+   * strictly deduplicating by userId to prevent a single user from existing multiple times in queue.
    */
   private getWaitingEntries(): QueueEntry[] {
     const sockets = this.ctx.getWebSockets();
-    const entries: QueueEntry[] = [];
+    const entryMap = new Map<string, QueueEntry>();
     for (const ws of sockets) {
       try {
         const user = ws.deserializeAttachment() as WaitingUser | null;
         if (user && user.userId) {
-          entries.push({ ws, user });
+          const existing = entryMap.get(user.userId);
+          if (!existing) {
+            entryMap.set(user.userId, { ws, user });
+          } else {
+            // Keep the newer connection and close/detach the stale one
+            if (user.queuedAt >= existing.user.queuedAt) {
+              try {
+                existing.ws.serializeAttachment(null);
+                existing.ws.close(1000, "Replaced by newer queue connection");
+              } catch {}
+              entryMap.set(user.userId, { ws, user });
+            } else {
+              try {
+                ws.serializeAttachment(null);
+                ws.close(1000, "Replaced by newer queue connection");
+              } catch {}
+            }
+          }
         }
       } catch {}
     }
-    return entries;
+    return Array.from(entryMap.values());
   }
 
   async fetch(request: Request): Promise<Response> {
@@ -138,6 +156,15 @@ export class CampusMatcherDO extends DurableObject<Env> {
 
       if (!userId) {
         return new Response("Missing userId", { status: 400 });
+      }
+
+      // Close and detach any existing queue WebSockets for this user to enforce 1 active socket per user
+      const existingSockets = this.ctx.getWebSockets(userId);
+      for (const existingWs of existingSockets) {
+        try {
+          existingWs.serializeAttachment(null);
+          existingWs.close(1000, "Replaced by newer queue connection");
+        } catch {}
       }
 
       const waitingUser: WaitingUser = {
@@ -174,7 +201,11 @@ export class CampusMatcherDO extends DurableObject<Env> {
             })
           );
           await this.syncUserBlocksFromDb(userId);
-          this.tryMatch(userId);
+          // Verify socket is still active and waiting before matching (guard against concurrent match during await)
+          const current = server.deserializeAttachment() as WaitingUser | null;
+          if (current && current.userId === userId) {
+            this.tryMatch(userId);
+          }
         } catch (e) {
           console.error("Match error in queueMicrotask:", e);
         }
@@ -445,13 +476,26 @@ export class CampusMatcherDO extends DurableObject<Env> {
     // MATCH FOUND!
     const matchId = `match_${crypto.randomUUID()}`;
 
-    // Clear attachments immediately so neither candidate is matched again concurrently
-    try {
-      candidateEntry.ws.serializeAttachment(null);
-    } catch {}
-    try {
-      best.other.ws.serializeAttachment(null);
-    } catch {}
+    // Invalidate ALL queue attachments and close any duplicate sockets for BOTH users
+    const allSocketsA = this.ctx.getWebSockets(candidateId);
+    for (const ws of allSocketsA) {
+      try {
+        ws.serializeAttachment(null);
+        if (ws !== candidateEntry.ws) {
+          ws.close(1000, "Matched on another connection");
+        }
+      } catch {}
+    }
+
+    const allSocketsB = this.ctx.getWebSockets(best.otherId);
+    for (const ws of allSocketsB) {
+      try {
+        ws.serializeAttachment(null);
+        if (ws !== best.other.ws) {
+          ws.close(1000, "Matched on another connection");
+        }
+      } catch {}
+    }
 
     // Record interaction timestamp for circular tie-breaker memory
     this.recordMatch(candidateId, best.otherId);
