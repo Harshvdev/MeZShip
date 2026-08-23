@@ -244,6 +244,7 @@ export default function Home() {
                       state={chatState}
                       onStartMatching={handleStartChat}
                       partnerDistanceMeters={partner?.distanceMeters}
+                      hasPreciseDistance={partner?.hasPreciseDistance}
                       partnerDisplayName={partner?.displayName}
                       isCalibrated={isCalibrated}
                     />
@@ -282,6 +283,7 @@ export default function Home() {
                       state={chatState}
                       onStartMatching={handleStartChat}
                       partnerDistanceMeters={partner?.distanceMeters}
+                      hasPreciseDistance={partner?.hasPreciseDistance}
                       partnerDisplayName={partner?.displayName}
                       isCalibrated={isCalibrated}
                     />
@@ -405,6 +407,7 @@ export default function Home() {
                     state={chatState}
                     onStartMatching={handleStartChat}
                     partnerDistanceMeters={partner?.distanceMeters}
+                    hasPreciseDistance={partner?.hasPreciseDistance}
                     partnerDisplayName={partner?.displayName}
                     isCalibrated={isCalibrated}
                   />
@@ -470,6 +473,7 @@ export default function Home() {
         onBlockUser={async (targetUserId) => {
           return blockPartner(targetUserId);
         }}
+        token={token}
       />
 
       <BlockConfirmModal

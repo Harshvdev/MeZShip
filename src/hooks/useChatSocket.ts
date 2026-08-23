@@ -442,6 +442,7 @@ export function useChatSocket(
             if (data.reason === "skip" || data.reason === "disconnect") {
               if (autoReconnectTimerRef.current) clearTimeout(autoReconnectTimerRef.current);
               autoReconnectTimerRef.current = setTimeout(() => {
+                autoReconnectTimerRef.current = null;
                 startMatching(currentRadiusRef.current);
               }, 600);
             }
@@ -461,15 +462,17 @@ export function useChatSocket(
         pendingAcksRef.current.clear();
 
         setChatState((prev) => {
-          if (prev === "MATCHED" || prev === "SEARCHING") {
+          if (prev === "MATCHED") {
             setStatusMessage("Disconnected from room. Finding next partner...");
             if (activeMatchIdRef.current) {
               updateMatchLogEnd(activeMatchIdRef.current, "disconnect");
             }
-            if (autoReconnectTimerRef.current) clearTimeout(autoReconnectTimerRef.current);
-            autoReconnectTimerRef.current = setTimeout(() => {
-              startMatching(currentRadiusRef.current);
-            }, 300);
+            if (!autoReconnectTimerRef.current) {
+              autoReconnectTimerRef.current = setTimeout(() => {
+                autoReconnectTimerRef.current = null;
+                startMatching(currentRadiusRef.current);
+              }, 400);
+            }
 
             return "PARTNER_SKIPPED";
           }
@@ -487,12 +490,14 @@ export function useChatSocket(
         pendingAcksRef.current.clear();
 
         setChatState((prev) => {
-          if (prev === "MATCHED" || prev === "SEARCHING") {
+          if (prev === "MATCHED") {
             setStatusMessage("Room connection error. Searching for next match...");
-            if (autoReconnectTimerRef.current) clearTimeout(autoReconnectTimerRef.current);
-            autoReconnectTimerRef.current = setTimeout(() => {
-              startMatching(currentRadiusRef.current);
-            }, 500);
+            if (!autoReconnectTimerRef.current) {
+              autoReconnectTimerRef.current = setTimeout(() => {
+                autoReconnectTimerRef.current = null;
+                startMatching(currentRadiusRef.current);
+              }, 500);
+            }
             return "PARTNER_SKIPPED";
           }
           return prev;
@@ -603,9 +608,35 @@ export function useChatSocket(
         }
       };
 
+      ws.onclose = (event) => {
+        setChatState((prev) => {
+          if (prev === "SEARCHING") {
+            setStatusMessage("Matchmaking connection dropped. Reconnecting...");
+            if (autoReconnectTimerRef.current) clearTimeout(autoReconnectTimerRef.current);
+            autoReconnectTimerRef.current = setTimeout(() => {
+              autoReconnectTimerRef.current = null;
+              startMatching(currentRadiusRef.current);
+            }, 1000);
+            return "SEARCHING";
+          }
+          return prev;
+        });
+      };
+
       ws.onerror = () => {
-        setStatusMessage("Connection failed. Check worker server.");
-        setChatState("ERROR");
+        setChatState((prev) => {
+          if (prev === "SEARCHING") {
+            setStatusMessage("Connection interrupted. Reconnecting...");
+            if (autoReconnectTimerRef.current) clearTimeout(autoReconnectTimerRef.current);
+            autoReconnectTimerRef.current = setTimeout(() => {
+              autoReconnectTimerRef.current = null;
+              startMatching(currentRadiusRef.current);
+            }, 1200);
+            return "SEARCHING";
+          }
+          setStatusMessage("Connection failed. Check worker server.");
+          return "ERROR";
+        });
       };
     },
     [userId, displayName, token, userLat, userLng, closeCurrentSocket, connectToRoom, startHeartbeat]

@@ -204,7 +204,7 @@ export class CampusMatcherDO extends DurableObject<Env> {
           // Verify socket is still active and waiting before matching (guard against concurrent match during await)
           const current = server.deserializeAttachment() as WaitingUser | null;
           if (current && current.userId === userId) {
-            this.tryMatch(userId);
+            await this.tryMatch(userId);
           }
         } catch (e) {
           console.error("Match error in queueMicrotask:", e);
@@ -341,7 +341,7 @@ export class CampusMatcherDO extends DurableObject<Env> {
             }
           }
           ws.serializeAttachment(current);
-          this.tryMatch(current.userId);
+          await this.tryMatch(current.userId);
         }
       }
     } catch (e) {
@@ -362,7 +362,7 @@ export class CampusMatcherDO extends DurableObject<Env> {
     );
   }
 
-  private tryMatch(candidateId: string) {
+  private async tryMatch(candidateId: string) {
     const waitingEntries = this.getWaitingEntries();
     const candidateEntry = waitingEntries.find((e) => e.user.userId === candidateId);
     if (!candidateEntry) return;
@@ -475,6 +475,25 @@ export class CampusMatcherDO extends DurableObject<Env> {
 
     // MATCH FOUND!
     const matchId = `match_${crypto.randomUUID()}`;
+
+    // Pre-initialize MatchRoomDO atomically with both participants before sending match_found
+    try {
+      const roomId = this.env.MATCH_ROOM.idFromName(matchId);
+      const room = this.env.MATCH_ROOM.get(roomId);
+      await room.fetch(
+        new Request("https://internal/init_match", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            matchId,
+            userA: candidateId,
+            userB: best.otherId,
+          }),
+        })
+      );
+    } catch (err) {
+      console.error("Failed to pre-initialize MatchRoomDO:", err);
+    }
 
     // Invalidate ALL queue attachments and close any duplicate sockets for BOTH users
     const allSocketsA = this.ctx.getWebSockets(candidateId);

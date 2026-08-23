@@ -11,6 +11,7 @@ interface RadarDialProps {
   onStartMatching?: () => void;
   onCancelSearch?: () => void;
   partnerDistanceMeters?: number;
+  hasPreciseDistance?: boolean;
   partnerDisplayName?: string;
   isCalibrated?: boolean;
   disabled?: boolean;
@@ -55,6 +56,7 @@ export function RadarDial({
   state,
   onCancelSearch,
   partnerDistanceMeters,
+  hasPreciseDistance,
   disabled = false,
 }: RadarDialProps) {
   const svgRef = useRef<SVGSVGElement>(null);
@@ -416,7 +418,7 @@ export function RadarDial({
                 fill="#FFB238"
                 className="font-mono text-[10px] font-bold"
               >
-                {formatDistance(partnerDistanceMeters)}
+                {formatDistance(partnerDistanceMeters, hasPreciseDistance)}
               </text>
             </g>
           )}
