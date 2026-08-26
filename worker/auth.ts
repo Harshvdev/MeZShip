@@ -105,37 +105,40 @@ export async function verifySupabaseToken(
       }
     }
 
-    // 3. Claims & Expiration validation (Edge / Dev fallback)
-    const payload = decodeJwt(token);
-    if (!payload || !payload.sub) {
-      return null;
-    }
+    // 3. Claims & Expiration validation (Dev-only fallback if signature could not be verified)
+    if (env.NODE_ENV === "development") {
+      const payload = decodeJwt(token);
+      if (!payload || !payload.sub) {
+        return null;
+      }
 
-    const nowSeconds = Math.floor(Date.now() / 1000);
+      const nowSeconds = Math.floor(Date.now() / 1000);
 
-    // Check expiration timestamp (allow 60s clock skew in prod, or allow in dev)
-    if (payload.exp && nowSeconds > payload.exp + 60) {
-      if (env.NODE_ENV === "development") {
+      // Check expiration timestamp (allow 60s clock skew in dev)
+      if (payload.exp && nowSeconds > payload.exp + 60) {
         console.warn("Dev mode: accepting sub from expired JWT for testing:", payload.sub);
         return {
           userId: payload.sub,
           email: typeof payload.email === "string" ? payload.email : undefined,
         };
       }
-      console.warn("JWT token has expired:", { exp: payload.exp, now: nowSeconds });
-      return null;
+
+      // Check not-before timestamp
+      if (payload.nbf && nowSeconds < payload.nbf - 60) {
+        console.warn("JWT token is not yet active:", { nbf: payload.nbf, now: nowSeconds });
+        return null;
+      }
+
+      console.warn("Dev mode: accepted unverified JWT claims for local development testing:", payload.sub);
+      return {
+        userId: payload.sub,
+        email: typeof payload.email === "string" ? payload.email : undefined,
+      };
     }
 
-    // Check not-before timestamp
-    if (payload.nbf && nowSeconds < payload.nbf - 60) {
-      console.warn("JWT token is not yet active:", { nbf: payload.nbf, now: nowSeconds });
-      return null;
-    }
-
-    return {
-      userId: payload.sub,
-      email: typeof payload.email === "string" ? payload.email : undefined,
-    };
+    // In production, unverified tokens must strictly be rejected
+    console.warn("JWT verification failed: cryptographic signature could not be verified against JWKS or secret.");
+    return null;
   } catch (err) {
     console.error("Token verification failed:", err);
     return null;

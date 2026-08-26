@@ -4,6 +4,8 @@
  */
 export function getApiUrl(path: string): string {
   const cleanPath = path.startsWith("/") ? path : `/${path}`;
+
+  // 1. Explicit configured URL takes highest priority (enables testing against production worker)
   if (process.env.NEXT_PUBLIC_WORKER_URL) {
     const base = process.env.NEXT_PUBLIC_WORKER_URL.trim()
       .replace(/['"]+/g, "")
@@ -11,17 +13,22 @@ export function getApiUrl(path: string): string {
       .replace(/\/+$/, "");
     return `${base}${cleanPath}`;
   }
+
+  // 2. Fallback to local worker dev server if running in local browser
   if (typeof window !== "undefined") {
     const hostname = window.location.hostname;
     const isLocal =
       hostname === "localhost" ||
       hostname === "127.0.0.1" ||
       hostname.startsWith("192.168.") ||
-      hostname.startsWith("10.");
+      hostname.startsWith("10.") ||
+      /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(hostname);
+
     if (isLocal) {
       const resolvedHost = hostname === "localhost" ? "127.0.0.1" : hostname;
       return `http://${resolvedHost}:8787${cleanPath}`;
     }
   }
+
   return cleanPath;
 }

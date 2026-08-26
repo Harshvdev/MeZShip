@@ -4,12 +4,14 @@ import { useState, useEffect } from "react";
 import { X, Clock, ShieldAlert, Ban, Check, Trash2, MapPin, MessageSquare, Radio } from "lucide-react";
 import { getMatchLogs, clearMatchLogs, getReportedUserIds, type MatchLogEntry } from "@/lib/matchLogs";
 import { formatDistance } from "@/lib/distance";
+import { getApiUrl } from "@/lib/api";
 
 interface MatchLogsModalProps {
   isOpen: boolean;
   onClose: () => void;
   onOpenReportForPastMatch: (matchId: string, reportedUserId: string, displayName: string) => void;
   onBlockUser: (targetUserId: string, displayName: string) => Promise<boolean>;
+  token?: string | null;
 }
 
 export function MatchLogsModal({
@@ -17,6 +19,7 @@ export function MatchLogsModal({
   onClose,
   onOpenReportForPastMatch,
   onBlockUser,
+  token,
 }: MatchLogsModalProps) {
   const [logs, setLogs] = useState<MatchLogEntry[]>([]);
   const [reportedUserIds, setReportedUserIds] = useState<string[]>([]);
@@ -27,8 +30,21 @@ export function MatchLogsModal({
     if (isOpen) {
       setLogs(getMatchLogs());
       setReportedUserIds(Array.from(getReportedUserIds()));
+
+      if (token) {
+        fetch(getApiUrl("/api/blocks"), {
+          headers: { Authorization: `Bearer ${token}` },
+        })
+          .then((res) => (res.ok ? (res.json() as Promise<{ blocks?: Array<{ blocked_user_id: string }> }>) : null))
+          .then((data) => {
+            if (data?.blocks && Array.isArray(data.blocks)) {
+              setBlockedUserIds(data.blocks.map((b) => b.blocked_user_id).filter(Boolean));
+            }
+          })
+          .catch(() => {});
+      }
     }
-  }, [isOpen]);
+  }, [isOpen, token]);
 
   if (!isOpen) return null;
 

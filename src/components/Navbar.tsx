@@ -108,7 +108,7 @@ export function Navbar({
                       className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-left text-xs font-medium text-ash hover:text-paper hover:bg-surface transition-colors"
                     >
                       <MapPin className="w-3.5 h-3.5 text-signal" />
-                      <span>Location Calibrate</span>
+                      <span>Location & Radius</span>
                     </button>
                   )}
 

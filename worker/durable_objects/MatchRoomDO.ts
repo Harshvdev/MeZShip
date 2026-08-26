@@ -38,6 +38,31 @@ export class MatchRoomDO extends DurableObject<Env> {
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
 
+    // 0. Initialize match context directly from CampusMatcherDO (atomic & eliminates race condition)
+    if (url.pathname === "/init_match" && request.method === "POST") {
+      try {
+        const body: { matchId: string; userA: string; userB: string } = await request.json();
+        let matchCtx = await this.getMatchContext();
+        if (!matchCtx) {
+          matchCtx = {
+            matchId: body.matchId,
+            userA: body.userA,
+            userB: body.userB,
+            createdAt: Date.now(),
+            endedAt: null,
+          };
+          this.matchContext = matchCtx;
+          await this.ctx.storage.put("matchContext", matchCtx);
+        }
+        return new Response(JSON.stringify({ success: true, matchContext: this.matchContext }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      } catch (e) {
+        return new Response(JSON.stringify({ success: false, error: String(e) }), { status: 500 });
+      }
+    }
+
     // 1. WebSocket Upgrade for active chat session
     if (request.headers.get("Upgrade") === "websocket") {
       const userId = url.searchParams.get("userId") || "";
@@ -340,13 +365,32 @@ export class MatchRoomDO extends DurableObject<Env> {
   }
 
   async webSocketClose(ws: WebSocket, code: number, reason: string, wasClean: boolean) {
-    const senderTags = this.ctx.getTags(ws);
-    let senderId = senderTags[0];
-    if (!senderId) {
-      const attachment = ws.deserializeAttachment() as SocketAttachment | null;
-      senderId = attachment?.userId || "";
+    const attachment = ws.deserializeAttachment() as SocketAttachment | null;
+    // If attachment was explicitly cleared (e.g. replaced by newer connection or cleanly detached), ignore
+    if (!attachment || !attachment.userId) {
+      return;
     }
-    await this.handleSkip(ws, senderId, "disconnect");
+
+    const userId = attachment.userId;
+    // Clear attachment so it won't be reused
+    try {
+      ws.serializeAttachment(null);
+    } catch {}
+
+    // Check if this user still has active sockets in this room (e.g. fast reconnection/replacement)
+    const remainingSockets = this.ctx.getWebSockets(userId);
+    const hasOtherActiveSocket = remainingSockets.some((s) => {
+      if (s === ws) return false;
+      const att = s.deserializeAttachment() as SocketAttachment | null;
+      return Boolean(att && att.userId === userId);
+    });
+
+    if (hasOtherActiveSocket) {
+      // User is still connected on another socket in this room
+      return;
+    }
+
+    await this.handleSkip(ws, userId, "disconnect");
   }
 
   private async handleSkip(sourceWs: WebSocket, initiatorId: string, reason: "skip" | "leave" | "disconnect" = "skip") {

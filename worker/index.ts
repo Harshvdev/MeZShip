@@ -14,8 +14,9 @@ export { CampusMatcherDO, MatchRoomDO };
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, Authorization",
+  "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS, HEAD",
+  "Access-Control-Allow-Headers": "*",
+  "Access-Control-Max-Age": "86400",
 };
 
 function jsonResponse(data: any, status = 200) {
@@ -126,13 +127,14 @@ export default {
     }
 
     // --------------------------------------------------------------------------
-    // 2. HTTP Public & Health Routes
+    // 2. HTTP Routes (Public & Authenticated)
     // --------------------------------------------------------------------------
-    if (url.pathname === "/api/health") {
-      return jsonResponse({ status: "healthy", timestamp: new Date().toISOString() });
-    }
+    try {
+      if (url.pathname === "/api/health") {
+        return jsonResponse({ status: "healthy", timestamp: new Date().toISOString() });
+      }
 
-    if (url.pathname === "/api/stats" && request.method === "GET") {
+      if (url.pathname === "/api/stats" && request.method === "GET") {
       try {
         const matcherId = env.CAMPUS_MATCHER.idFromName("global_campus_matcher");
         const matcher = env.CAMPUS_MATCHER.get(matcherId);
@@ -198,27 +200,53 @@ export default {
     // User Profile
     if (url.pathname === "/api/profile") {
       if (request.method === "GET") {
-        let profile = await prisma.userProfile.findUnique({
-          where: { user_id: authUser.userId },
-        });
+        try {
+          const fetchPromise = prisma.userProfile.findUnique({
+            where: { user_id: authUser.userId },
+          });
+          const timeoutPromise = new Promise<null>((_, reject) =>
+            setTimeout(() => reject(new Error("DB timeout")), 2500)
+          );
 
-        if (!profile) {
-          // Generate default pseudonymous display name
-          const animals = ["Fox", "Owl", "Panda", "Wolf", "Hawk", "Otter", "Lynx", "Falcon"];
-          const colors = ["Blue", "Silver", "Crimson", "Golden", "Jade", "Cosmic", "Shadow"];
-          const randomName = `${colors[Math.floor(Math.random() * colors.length)]}${
-            animals[Math.floor(Math.random() * animals.length)]
-          }${Math.floor(100 + Math.random() * 900)}`;
+          let profile = (await Promise.race([fetchPromise, timeoutPromise])) as any;
 
-          profile = await prisma.userProfile.create({
-            data: {
+          if (!profile) {
+            // Generate default pseudonymous display name
+            const animals = ["Fox", "Owl", "Panda", "Wolf", "Hawk", "Otter", "Lynx", "Falcon"];
+            const colors = ["Blue", "Silver", "Crimson", "Golden", "Jade", "Cosmic", "Shadow"];
+            const randomName = `${colors[Math.floor(Math.random() * colors.length)]}${
+              animals[Math.floor(Math.random() * animals.length)]
+            }${Math.floor(100 + Math.random() * 900)}`;
+
+            try {
+              profile = await prisma.userProfile.create({
+                data: {
+                  user_id: authUser.userId,
+                  display_name: randomName,
+                },
+              });
+            } catch {
+              profile = {
+                user_id: authUser.userId,
+                display_name: randomName,
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+              };
+            }
+          }
+
+          return jsonResponse({ profile });
+        } catch (dbErr) {
+          console.warn("DB profile lookup timeout/error, using fallback:", dbErr);
+          return jsonResponse({
+            profile: {
               user_id: authUser.userId,
-              display_name: randomName,
+              display_name: `Echo${authUser.userId.slice(0, 4)}`,
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
             },
           });
         }
-
-        return jsonResponse({ profile });
       }
 
       if (request.method === "POST") {
@@ -523,6 +551,13 @@ export default {
       });
     }
 
-    return errorResponse("Endpoint not found", 404);
+      return errorResponse("Endpoint not found", 404);
+    } catch (err: any) {
+      console.error("Worker HTTP uncaught error:", err);
+      return jsonResponse(
+        { error: err?.message || "Internal Worker Server Error" },
+        500
+      );
+    }
   },
 };

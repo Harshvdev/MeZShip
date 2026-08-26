@@ -15,7 +15,16 @@ import { useGeolocation } from "@/hooks/useGeolocation";
 import { useChatSocket } from "@/hooks/useChatSocket";
 import type { ReportReason } from "@/lib/protocol";
 import { getApiUrl } from "@/lib/api";
-import { Radio, AlertTriangle, RotateCcw, LogOut, ArrowRight } from "lucide-react";
+import {
+  Radio,
+  AlertTriangle,
+  RotateCcw,
+  LogOut,
+  MapPin,
+  RefreshCw,
+  Compass,
+  Lock,
+} from "lucide-react";
 import { useRouter } from "next/navigation";
 
 export default function Home() {
@@ -26,16 +35,19 @@ export default function Home() {
     lng,
     accuracy,
     loading: geoLoading,
-    isCalibrated,
+    permissionDenied,
     locationName,
     retry: retryGeo,
-    setCalibratedLocation,
-    resetToAuto,
   } = useGeolocation();
 
   const [matchingRadius, setMatchingRadius] = useState<number>(5000); // 5km default
   const [isBanned, setIsBanned] = useState(false);
   const [banReason, setBanReason] = useState<string | null>(null);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   // Modals
   const [showSettings, setShowSettings] = useState(false);
@@ -135,14 +147,19 @@ export default function Home() {
   }, [token]);
 
   const radiusKm = Math.round(matchingRadius / 1000);
+  const hasCoordinates = lat !== null && lng !== null;
 
   const handleStartChat = useCallback(() => {
     if (!user) {
       router.push("/auth");
       return;
     }
+    if (!hasCoordinates) {
+      retryGeo();
+      return;
+    }
     startMatching(matchingRadius);
-  }, [user, router, startMatching, matchingRadius]);
+  }, [user, router, hasCoordinates, retryGeo, startMatching, matchingRadius]);
 
   const handleRadiusChange = useCallback((km: number) => {
     setMatchingRadius(km * 1000);
@@ -224,8 +241,74 @@ export default function Home() {
               onOpenBlock={() => setShowBlock(true)}
             />
           </div>
+        ) : !mounted || (geoLoading && !hasCoordinates) ? (
+          /* INITIAL GPS ACQUISITION / SSR MOUNTING STATE */
+          <div className="flex-1 min-h-0 w-full flex flex-col items-center justify-center p-4 sm:p-6 text-center my-auto animate-fade-in">
+            <div className="flex flex-col items-center gap-3 text-ash font-mono text-xs">
+              <RefreshCw className="w-6 h-6 animate-spin text-signal" />
+              <span>Acquiring satellite constellation & location fix...</span>
+            </div>
+          </div>
+        ) : !hasCoordinates ? (
+          /* LOCATION PERMISSION MANDATORY STATE */
+          <div className="flex-1 min-h-0 w-full max-w-lg mx-auto flex flex-col items-center justify-center p-4 sm:p-6 text-center my-auto animate-fade-in">
+            <div className="w-full p-6 sm:p-8 rounded-2xl bg-surface border border-line-bright shadow-2xl space-y-5">
+              {/* Radar/Pin Icon Badge */}
+              <div className="w-16 h-16 rounded-2xl bg-signal/10 border border-signal/30 text-signal flex items-center justify-center mx-auto shadow-inner relative">
+                <Compass className="w-8 h-8 animate-pulse" />
+                <span className="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-signal animate-ping" />
+              </div>
+
+              {/* Headline & Explanation */}
+              <div className="space-y-2">
+                <span className="font-mono text-[10px] sm:text-xs font-semibold tracking-widest text-signal bg-signal/10 border border-signal/20 px-3 py-1 rounded-full uppercase">
+                  Location Permission Required
+                </span>
+                <h2 className="text-xl sm:text-2xl font-bold font-display text-paper leading-tight pt-1">
+                  Enable Location to Connect Nearby
+                </h2>
+                <p className="text-xs sm:text-sm text-ash leading-relaxed font-body max-w-md mx-auto">
+                  MeZShip matches you with people nearby based on physical distance. Please allow location permissions in your browser to discover local peers.
+                </p>
+              </div>
+
+              {/* Action Button */}
+              <div className="pt-2 space-y-3">
+                <button
+                  type="button"
+                  onClick={retryGeo}
+                  disabled={geoLoading}
+                  className="btn-ptt w-full py-3.5 px-6 rounded-xl font-display font-bold text-sm sm:text-base tracking-wide flex items-center justify-center gap-2 shadow-xl active:scale-[0.98] transition-all cursor-pointer"
+                >
+                  {geoLoading ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      <span>Acquiring GPS Signal...</span>
+                    </>
+                  ) : (
+                    <>
+                      <MapPin className="w-4 h-4" />
+                      <span>Grant Location Permission</span>
+                    </>
+                  )}
+                </button>
+
+                {permissionDenied && (
+                  <p className="font-mono text-[11px] text-alert/90 bg-alert/10 border border-alert/20 rounded-lg p-2.5 leading-relaxed text-left">
+                    💡 <strong>Browser Blocked:</strong> Click the site permissions / lock icon in your browser address bar and set <strong>Location</strong> to <strong>Allow</strong>, then click Grant Location Permission.
+                  </p>
+                )}
+              </div>
+
+              {/* Privacy Guarantee Footer */}
+              <div className="pt-3 border-t border-line flex items-center justify-center gap-2 text-ash font-mono text-[10px]">
+                <Lock className="w-3 h-3 text-signal" />
+                <span>Zero location logs · Coordinates never stored · Live proximity only</span>
+              </div>
+            </div>
+          </div>
         ) : (
-          /* UNIFIED MATCHING VIEW */
+          /* UNIFIED MATCHING VIEW (When Coordinates Are Active) */
           <div className="flex-1 min-h-0 w-full flex flex-col overflow-hidden">
             {/* MOBILE LAYOUT (<lg) */}
             <div className="lg:hidden flex-1 min-h-0 w-full max-w-sm mx-auto flex flex-col justify-between items-center py-2 px-1 gap-2 overflow-hidden">
@@ -244,8 +327,8 @@ export default function Home() {
                       state={chatState}
                       onStartMatching={handleStartChat}
                       partnerDistanceMeters={partner?.distanceMeters}
+                      hasPreciseDistance={partner?.hasPreciseDistance}
                       partnerDisplayName={partner?.displayName}
-                      isCalibrated={isCalibrated}
                     />
                   </div>
 
@@ -282,8 +365,8 @@ export default function Home() {
                       state={chatState}
                       onStartMatching={handleStartChat}
                       partnerDistanceMeters={partner?.distanceMeters}
+                      hasPreciseDistance={partner?.hasPreciseDistance}
                       partnerDisplayName={partner?.displayName}
-                      isCalibrated={isCalibrated}
                     />
                   </div>
 
@@ -405,8 +488,8 @@ export default function Home() {
                     state={chatState}
                     onStartMatching={handleStartChat}
                     partnerDistanceMeters={partner?.distanceMeters}
+                    hasPreciseDistance={partner?.hasPreciseDistance}
                     partnerDisplayName={partner?.displayName}
-                    isCalibrated={isCalibrated}
                   />
                 </div>
               </div>
@@ -422,14 +505,12 @@ export default function Home() {
         lat={lat}
         lng={lng}
         accuracy={accuracy}
-        isCalibrated={isCalibrated}
         locationName={locationName}
         loading={geoLoading}
+        permissionDenied={permissionDenied}
         radiusMeters={matchingRadius}
         onRadiusChange={setMatchingRadius}
         onRetry={retryGeo}
-        onSetLocation={(newLat, newLng, label) => setCalibratedLocation(newLat, newLng, label)}
-        onResetAuto={resetToAuto}
       />
 
       <SettingsModal
@@ -470,6 +551,7 @@ export default function Home() {
         onBlockUser={async (targetUserId) => {
           return blockPartner(targetUserId);
         }}
+        token={token}
       />
 
       <BlockConfirmModal
