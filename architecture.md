@@ -11,7 +11,7 @@ Open website
     ↓
 Sign up / Sign in
     ↓
-Grant location access (or calibrate location)
+Grant location access
     ↓
 Configure search radius (default: 5 km)
     ↓
@@ -51,7 +51,7 @@ The MVP includes:
 * randomly generated display names
 * editable display names in settings
 * profile settings
-* browser/device geolocation with manual coordinate calibration
+* browser/device geolocation permission (strictly required for proximity matching)
 * distance-based proximity matching
 * interactive search radius slider (1–50 km, default 5 km) with quick presets
 * temporary 1-to-1 conversations
@@ -455,9 +455,8 @@ Account sign-out
 ```text
 Matchmaking search radius slider (1–50 km, default 5 km)
 Radius quick preset chips (1 km, 5 km, 10 km, 25 km, 50 km)
-GPS / Network coordinate detection status
-Custom coordinate calibration tool (for desktop/VPN corrections)
-Reset to auto-detected GPS
+GPS / Network coordinate detection status & precision
+Re-poll GPS sensor
 ```
 
 ---
@@ -473,7 +472,7 @@ Conceptually:
 ```text
 User
  ↓
-Browser location permission (or calibrated coordinates)
+Browser location permission
  ↓
 Temporary current coordinates (lat, lng) + Max Radius (default 5 km)
  ↓
@@ -484,9 +483,7 @@ Distance calculation (Haversine formula in-memory)
 Matching decision: distance(A, B) ≤ min(radiusA, radiusB)
 ```
 
-The service does not claim that a website can guarantee a particular physical precision on every device.
-
-Actual accuracy depends on the device, browser, operating system, permissions, and available location sources. Users can calibrate custom coordinates in the Location modal if their desktop network reports an inaccurate IP location.
+The service requires browser location permission to verify proximity. Actual accuracy depends on the device, browser, operating system, permissions, and available location sources. Manual coordinate spoofing is disallowed to maintain user trust and accurate proximity.
 
 ---
 
@@ -1114,7 +1111,7 @@ Device fingerprints
 | WebSocket optimization | WebSocket Hibernation in `MatchRoomDO` |
 | Matchmaking Engine | In-memory `CampusMatcherDO` using Haversine distance proximity |
 | Search Radius | User-configurable (1–50 km, default 5 km) with preset buttons |
-| Location Calibration | Client-side geolocation with custom coordinate calibration option |
+| Location Requirement | Mandatory browser-level geolocation (manual coordinate entry disallowed) |
 | Realtime rate limiting | In-memory sliding window in `MatchRoomDO` (20 msgs/min) |
 | Persistent database | Supabase PostgreSQL (via transaction pooler port 6543) |
 | Database ORM & Schema | Prisma (`schema.prisma` as single declarative source of truth) |

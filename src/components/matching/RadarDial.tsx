@@ -13,7 +13,6 @@ interface RadarDialProps {
   partnerDistanceMeters?: number;
   hasPreciseDistance?: boolean;
   partnerDisplayName?: string;
-  isCalibrated?: boolean;
   disabled?: boolean;
 }
 

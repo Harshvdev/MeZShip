@@ -145,7 +145,7 @@ export function useChatSocket(
   const getWsBaseUrl = (path: string) => {
     const cleanPath = path.startsWith("/") ? path : `/${path}`;
 
-    // 1. Explicit WebSocket URL (Production wss:// or Local ws://)
+    // 1. Explicit WebSocket URL (Production wss:// or configured ws://)
     if (process.env.NEXT_PUBLIC_WS_URL) {
       const base = process.env.NEXT_PUBLIC_WS_URL.trim()
         .replace(/['"]+/g, "")
@@ -154,7 +154,7 @@ export function useChatSocket(
       return `${base}${cleanPath}`;
     }
 
-    // 2. Derive WebSocket URL from Worker HTTP/HTTPS URL
+    // 2. Derive WebSocket URL from configured Worker URL
     if (process.env.NEXT_PUBLIC_WORKER_URL) {
       const base = process.env.NEXT_PUBLIC_WORKER_URL.trim()
         .replace(/['"]+/g, "")
@@ -165,7 +165,7 @@ export function useChatSocket(
       return `${base}${cleanPath}`;
     }
 
-    // 3. Fallback based on client window location
+    // 3. Fallback based on client window location for local dev without env vars
     if (typeof window !== "undefined") {
       const hostname = window.location.hostname;
       const isLocal =
@@ -513,6 +513,21 @@ export function useChatSocket(
         setStatusMessage("Authenticating session...");
         return;
       }
+      const latToSend = userLatRef.current ?? userLat;
+      const lngToSend = userLngRef.current ?? userLng;
+
+      if (
+        latToSend === null ||
+        lngToSend === null ||
+        !Number.isFinite(latToSend) ||
+        !Number.isFinite(lngToSend) ||
+        (latToSend === 0 && lngToSend === 0)
+      ) {
+        setStatusMessage("Location permission is required to start matching.");
+        setChatState("IDLE");
+        return;
+      }
+
       closeCurrentSocket();
 
       currentRadiusRef.current = radius;
@@ -523,9 +538,6 @@ export function useChatSocket(
       setChatState("SEARCHING");
       const radiusKm = (radius / 1000).toFixed(0);
       setStatusMessage(`Searching for nearby users within ${radiusKm} km...`);
-
-      const latToSend = userLatRef.current ?? userLat ?? 0;
-      const lngToSend = userLngRef.current ?? userLng ?? 0;
 
       const excludeIds = Array.from(sessionReportedUsersRef.current).filter(Boolean);
       const excludeParam = excludeIds.length > 0 ? `&excludeUserIds=${encodeURIComponent(excludeIds.join(","))}` : "";

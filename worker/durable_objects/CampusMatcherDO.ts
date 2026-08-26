@@ -158,6 +158,10 @@ export class CampusMatcherDO extends DurableObject<Env> {
         return new Response("Missing userId", { status: 400 });
       }
 
+      if (!Number.isFinite(lat) || !Number.isFinite(lng) || (lat === 0 && lng === 0)) {
+        return new Response("Valid location coordinates required to join matchmaking", { status: 400 });
+      }
+
       // Close and detach any existing queue WebSockets for this user to enforce 1 active socket per user
       const existingSockets = this.ctx.getWebSockets(userId);
       for (const existingWs of existingSockets) {
@@ -411,29 +415,22 @@ export class CampusMatcherDO extends DurableObject<Env> {
         Number.isFinite(otherLng) &&
         (otherLat !== 0 || otherLng !== 0);
 
-      const bothHaveCoords = candHasCoords && otherHasCoords;
+      if (!candHasCoords || !otherHasCoords) {
+        continue;
+      }
 
-      let distance = 0;
-      let hasPreciseDistance = false;
+      // 2. Proximity calculation (Haversine formula)
+      const distance = haversineDistanceMeters(candLat, candLng, otherLat, otherLng);
+      const hasPreciseDistance = true;
 
-      if (bothHaveCoords) {
-        // 2. Proximity calculation (Haversine formula)
-        distance = haversineDistanceMeters(candLat, candLng, otherLat, otherLng);
-        hasPreciseDistance = true;
+      const maxAllowedDistance = Math.min(
+        candidateEntry.user.maxRadiusMeters || 5000,
+        other.user.maxRadiusMeters || 5000
+      );
 
-        const maxAllowedDistance = Math.min(
-          candidateEntry.user.maxRadiusMeters || 5000,
-          other.user.maxRadiusMeters || 5000
-        );
-
-        // Distance check: must be within max allowed distance (default 5 km)
-        if (distance > maxAllowedDistance) {
-          continue;
-        }
-      } else {
-        // Fallback: When coordinates are missing, permit match without calculating distance against (0,0) Null Island
-        distance = 0;
-        hasPreciseDistance = false;
+      // Distance check: must be within max allowed distance (default 5 km)
+      if (distance > maxAllowedDistance) {
+        continue;
       }
 
       const lastMatchedTime = this.getLastMatchedTime(candidateId, otherId);

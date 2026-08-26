@@ -1,13 +1,12 @@
 "use client";
 
-import { useState } from "react";
 import {
   X,
   MapPin,
   RefreshCw,
   Sliders,
-  RotateCcw,
   Compass,
+  AlertTriangle,
 } from "lucide-react";
 
 interface LocationModalProps {
@@ -16,14 +15,12 @@ interface LocationModalProps {
   lat: number | null;
   lng: number | null;
   accuracy: number | null;
-  isCalibrated: boolean;
   locationName: string | null;
   loading: boolean;
+  permissionDenied?: boolean;
   radiusMeters: number;
   onRadiusChange: (radius: number) => void;
   onRetry: () => void;
-  onSetLocation: (lat: number, lng: number, label?: string) => void;
-  onResetAuto: () => void;
 }
 
 const RADIUS_PRESETS = [
@@ -40,32 +37,17 @@ export function LocationModal({
   lat,
   lng,
   accuracy,
-  isCalibrated,
   locationName,
   loading,
+  permissionDenied = false,
   radiusMeters,
   onRadiusChange,
   onRetry,
-  onSetLocation,
-  onResetAuto,
 }: LocationModalProps) {
-  const [customLat, setCustomLat] = useState<string>(lat ? lat.toString() : "");
-  const [customLng, setCustomLng] = useState<string>(lng ? lng.toString() : "");
-  const [showManualInputs, setShowManualInputs] = useState(false);
-
-  const handleManualSave = (e: React.FormEvent) => {
-    e.preventDefault();
-    const parsedLat = parseFloat(customLat);
-    const parsedLng = parseFloat(customLng);
-    if (!isNaN(parsedLat) && !isNaN(parsedLng)) {
-      onSetLocation(parsedLat, parsedLng, "Custom Coordinates");
-      setShowManualInputs(false);
-    }
-  };
-
   if (!isOpen) return null;
 
   const currentRadiusKm = Math.round(radiusMeters / 1000);
+  const hasCoordinates = lat !== null && lng !== null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-ink/80 backdrop-blur-md animate-fade-in">
@@ -78,14 +60,15 @@ export function LocationModal({
             </div>
             <div>
               <h3 className="font-display font-bold text-paper text-sm sm:text-base leading-tight">
-                Position & Proximity Instrument
+                Search Scope & Location Sensor
               </h3>
               <p className="font-mono text-[10px] text-ash">
-                CALIBRATE GPS · SEARCH RADIUS
+                DEVICE GPS · PROXIMITY RADIUS
               </p>
             </div>
           </div>
           <button
+            type="button"
             onClick={onClose}
             className="p-1.5 rounded-lg text-ash hover:text-paper hover:bg-surface transition-colors"
           >
@@ -155,23 +138,17 @@ export function LocationModal({
                 <MapPin className="w-3.5 h-3.5 text-signal" />
                 <span>Hardware Fix</span>
               </span>
-              {isCalibrated ? (
-                <span className="px-2 py-0.5 rounded font-mono text-[10px] font-semibold bg-signal/15 border border-signal/30 text-signal">
-                  MANUAL FIX
-                </span>
-              ) : (
-                <span className="px-2 py-0.5 rounded font-mono text-[10px] font-semibold bg-surface border border-line text-ash">
-                  AUTO SENSOR
-                </span>
-              )}
+              <span className="px-2 py-0.5 rounded font-mono text-[10px] font-semibold bg-surface border border-line text-ash">
+                BROWSER SENSOR
+              </span>
             </div>
 
             {loading ? (
               <div className="flex items-center gap-2 font-mono text-xs text-ash py-2">
                 <RefreshCw className="w-3.5 h-3.5 animate-spin text-signal" />
-                <span>Acquiring satellite constellation...</span>
+                <span>Acquiring satellite constellation & network fix...</span>
               </div>
-            ) : lat && lng ? (
+            ) : hasCoordinates ? (
               <div className="space-y-1.5 font-mono text-xs">
                 <div className="p-2 rounded bg-surface border border-line flex items-center justify-between text-paper">
                   <span className="text-ash">LAT / LNG:</span>
@@ -187,82 +164,43 @@ export function LocationModal({
                 )}
                 {locationName && (
                   <div className="text-[11px] text-ash px-1 flex items-center justify-between">
-                    <span>Sector:</span>
+                    <span>Sensor Source:</span>
                     <span className="text-paper truncate max-w-[200px]">{locationName}</span>
                   </div>
                 )}
               </div>
             ) : (
-              <div className="text-xs text-alert font-mono py-1">
-                ⚠️ Location sensor offline or blocked by browser permission.
-              </div>
-            )}
-
-            {/* Calibration Controls */}
-            <div className="flex items-center gap-2 pt-1">
-              <button
-                type="button"
-                onClick={onRetry}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface hover:bg-surface-raised border border-line text-xs font-mono text-ash hover:text-paper transition-colors"
-              >
-                <RefreshCw className="w-3 h-3" />
-                <span>Re-poll GPS</span>
-              </button>
-
-              {isCalibrated && (
-                <button
-                  type="button"
-                  onClick={onResetAuto}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface hover:bg-surface-raised border border-line text-xs font-mono text-ash hover:text-paper transition-colors"
-                >
-                  <RotateCcw className="w-3 h-3" />
-                  <span>Reset Auto</span>
-                </button>
-              )}
-
-              <button
-                type="button"
-                onClick={() => setShowManualInputs(!showManualInputs)}
-                className="ml-auto text-[11px] font-mono text-signal hover:underline"
-              >
-                {showManualInputs ? "Hide manual" : "Manual coords"}
-              </button>
-            </div>
-
-            {/* Manual Coordinates Form */}
-            {showManualInputs && (
-              <form onSubmit={handleManualSave} className="space-y-2 pt-2 border-t border-line">
-                <div className="grid grid-cols-2 gap-2 font-mono text-xs">
-                  <div>
-                    <label className="text-[10px] text-ash block mb-1">LATITUDE</label>
-                    <input
-                      type="number"
-                      step="any"
-                      value={customLat}
-                      onChange={(e) => setCustomLat(e.target.value)}
-                      placeholder="e.g. 37.7749"
-                      className="w-full px-2.5 py-1.5 rounded bg-surface border border-line text-paper focus:border-signal focus:outline-none"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-[10px] text-ash block mb-1">LONGITUDE</label>
-                    <input
-                      type="number"
-                      step="any"
-                      value={customLng}
-                      onChange={(e) => setCustomLng(e.target.value)}
-                      placeholder="e.g. -122.4194"
-                      className="w-full px-2.5 py-1.5 rounded bg-surface border border-line text-paper focus:border-signal focus:outline-none"
-                    />
+              <div className="p-3 rounded-lg bg-alert/10 border border-alert/30 text-alert text-xs space-y-2">
+                <div className="flex items-start gap-2">
+                  <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                  <div className="leading-relaxed">
+                    <strong className="block font-semibold">Location Permission Required</strong>
+                    Location access is required to connect to nearby peers within your chosen radius. Please allow location permissions in your browser.
                   </div>
                 </div>
                 <button
-                  type="submit"
-                  className="w-full py-1.5 rounded bg-signal text-ink font-display font-bold text-xs hover:bg-signal/90 transition-colors"
+                  type="button"
+                  onClick={onRetry}
+                  className="w-full py-2 px-3 rounded-lg bg-alert text-ink font-display font-bold text-xs hover:bg-alert/90 transition-colors flex items-center justify-center gap-1.5"
                 >
-                  Apply Calibration
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  <span>Grant / Retry Location Permission</span>
                 </button>
-              </form>
+              </div>
+            )}
+
+            {/* GPS Controls */}
+            {hasCoordinates && (
+              <div className="flex items-center gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={onRetry}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface hover:bg-surface-raised border border-line text-xs font-mono text-ash hover:text-paper transition-colors"
+                >
+                  <RefreshCw className="w-3 h-3" />
+                  <span>Re-poll GPS</span>
+                </button>
+              </div>
             )}
           </div>
         </div>
