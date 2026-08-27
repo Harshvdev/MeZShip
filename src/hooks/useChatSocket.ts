@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, useCallback } from "react";
-import type { WebSocketServerMessage, ReportReason } from "@/lib/protocol";
+import type { WebSocketServerMessage, ReportReason, MessageReplyInfo } from "@/lib/protocol";
 import {
   saveMatchLog,
   updateMatchLogEnd,
@@ -27,6 +27,7 @@ export interface ChatMessage {
   status?: "sending" | "sent" | "failed";
   clientMsgId?: string;
   reactions?: Record<string, string[]>; // emoji -> array of userIds
+  replyTo?: MessageReplyInfo;
 }
 
 function toggleEmojiInReactions(
@@ -146,27 +147,7 @@ export function useChatSocket(
   const getWsBaseUrl = (path: string) => {
     const cleanPath = path.startsWith("/") ? path : `/${path}`;
 
-    // 1. Explicit WebSocket URL (Production wss:// or configured ws://)
-    if (process.env.NEXT_PUBLIC_WS_URL) {
-      const base = process.env.NEXT_PUBLIC_WS_URL.trim()
-        .replace(/['"]+/g, "")
-        .replace(/localhost/g, "127.0.0.1")
-        .replace(/\/+$/, "");
-      return `${base}${cleanPath}`;
-    }
-
-    // 2. Derive WebSocket URL from configured Worker URL
-    if (process.env.NEXT_PUBLIC_WORKER_URL) {
-      const base = process.env.NEXT_PUBLIC_WORKER_URL.trim()
-        .replace(/['"]+/g, "")
-        .replace(/localhost/g, "127.0.0.1")
-        .replace(/^https:\/\//i, "wss://")
-        .replace(/^http:\/\//i, "ws://")
-        .replace(/\/+$/, "");
-      return `${base}${cleanPath}`;
-    }
-
-    // 3. Fallback based on client window location for local dev without env vars
+    // 1. Fallback based on client window location for local dev
     if (typeof window !== "undefined") {
       const hostname = window.location.hostname;
       const isLocal =
@@ -175,13 +156,55 @@ export function useChatSocket(
         hostname.startsWith("192.168.") ||
         hostname.startsWith("10.") ||
         /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(hostname);
+
       if (isLocal) {
+        if (
+          process.env.NEXT_PUBLIC_WS_URL &&
+          (process.env.NEXT_PUBLIC_WS_URL.includes("localhost") ||
+            process.env.NEXT_PUBLIC_WS_URL.includes("127.0.0.1"))
+        ) {
+          const base = process.env.NEXT_PUBLIC_WS_URL.trim()
+            .replace(/['"]+/g, "")
+            .replace(/localhost/g, "127.0.0.1")
+            .replace(/\/+$/, "");
+          return `${base}${cleanPath}`;
+        }
+        if (
+          process.env.NEXT_PUBLIC_WORKER_URL &&
+          (process.env.NEXT_PUBLIC_WORKER_URL.includes("localhost") ||
+            process.env.NEXT_PUBLIC_WORKER_URL.includes("127.0.0.1"))
+        ) {
+          const base = process.env.NEXT_PUBLIC_WORKER_URL.trim()
+            .replace(/['"]+/g, "")
+            .replace(/localhost/g, "127.0.0.1")
+            .replace(/^https:\/\//i, "wss://")
+            .replace(/^http:\/\//i, "ws://")
+            .replace(/\/+$/, "");
+          return `${base}${cleanPath}`;
+        }
         const resolvedHost = hostname === "localhost" ? "127.0.0.1" : hostname;
         return `ws://${resolvedHost}:8787${cleanPath}`;
       }
-      const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-      const host = window.location.host.replace(/^localhost(?=:|$)/, "127.0.0.1");
-      return `${protocol}//${host}${cleanPath}`;
+    }
+
+    // 2. Explicit WebSocket URL (Production wss:// or configured ws://)
+    if (process.env.NEXT_PUBLIC_WS_URL) {
+      const base = process.env.NEXT_PUBLIC_WS_URL.trim()
+        .replace(/['"]+/g, "")
+        .replace(/localhost/g, "127.0.0.1")
+        .replace(/\/+$/, "");
+      return `${base}${cleanPath}`;
+    }
+
+    // 3. Derive WebSocket URL from configured Worker URL
+    if (process.env.NEXT_PUBLIC_WORKER_URL) {
+      const base = process.env.NEXT_PUBLIC_WORKER_URL.trim()
+        .replace(/['"]+/g, "")
+        .replace(/localhost/g, "127.0.0.1")
+        .replace(/^https:\/\//i, "wss://")
+        .replace(/^http:\/\//i, "ws://")
+        .replace(/\/+$/, "");
+      return `${base}${cleanPath}`;
     }
 
     return `ws://127.0.0.1:8787${cleanPath}`;
@@ -362,6 +385,7 @@ export function useChatSocket(
                   id: data.id,
                   timestamp: data.timestamp,
                   status: "sent",
+                  replyTo: data.replyTo || pending.replyTo,
                 };
                 return updated;
               }
@@ -371,17 +395,16 @@ export function useChatSocket(
                 return prev;
               }
 
-              return [
-                ...prev,
-                {
-                  id: data.id,
-                  senderId: data.senderId,
-                  isSelf: data.senderId === userId,
-                  text: data.text,
-                  timestamp: data.timestamp,
-                  status: "sent",
-                },
-              ];
+              const newMsg: ChatMessage = {
+                id: data.id,
+                senderId: data.senderId,
+                isSelf: data.senderId === userId,
+                text: data.text,
+                timestamp: data.timestamp,
+                status: "sent",
+                replyTo: data.replyTo,
+              };
+              return [...prev, newMsg];
             });
           } else if (data.type === "message_ack") {
             const { clientMsgId, id, timestamp } = data;
@@ -682,7 +705,7 @@ export function useChatSocket(
   );
 
   const sendMessage = useCallback(
-    (text: string) => {
+    (text: string, replyTo?: MessageReplyInfo) => {
       const trimmed = text.trim();
       if (!trimmed || chatState !== "MATCHED") return;
 
@@ -706,6 +729,7 @@ export function useChatSocket(
           text: trimmed,
           timestamp: now,
           status: "sending",
+          replyTo,
         },
       ]);
 
@@ -726,14 +750,15 @@ export function useChatSocket(
       }, 800);
       pendingAcksRef.current.set(clientMsgId, timer);
 
+      const sendPayload = {
+        type: "message",
+        text: trimmed,
+        clientMsgId,
+        replyTo,
+      };
+
       try {
-        wsRef.current.send(
-          JSON.stringify({
-            type: "message",
-            text: trimmed,
-            clientMsgId,
-          })
-        );
+        wsRef.current.send(JSON.stringify(sendPayload));
       } catch (err) {
         console.error("Failed to send message:", err);
         clearTimeout(timer);

@@ -231,6 +231,7 @@ export default function Home() {
               partner={partner}
               messages={messages}
               currentUserId={profile?.user_id}
+              currentUserDisplayName={profile?.display_name}
               partnerLeaveReason={partnerLeaveReason}
               isPartnerTyping={isPartnerTyping}
               onTypingChange={sendTyping}

@@ -1,25 +1,38 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
-import { SmilePlus } from "lucide-react";
+import { useState, useRef, useEffect, memo } from "react";
+import { SmilePlus, Reply } from "lucide-react";
 import type { ChatMessage } from "@/hooks/useChatSocket";
 import { ALLOWED_REACTION_EMOJIS } from "@/lib/protocol";
 
 interface MessageBubbleProps {
   message: ChatMessage;
   currentUserId?: string;
+  partnerDisplayName?: string;
   onToggleReaction?: (messageId: string, emoji: string) => void;
+  onReply?: (message: ChatMessage) => void;
+  onScrollToMessage?: (messageId: string) => void;
 }
 
-export function MessageBubble({
+export const MessageBubble = memo(function MessageBubble({
   message,
   currentUserId,
+  partnerDisplayName,
   onToggleReaction,
+  onReply,
+  onScrollToMessage,
 }: MessageBubbleProps) {
   const [showPicker, setShowPicker] = useState(false);
   const [placement, setPlacement] = useState<"top" | "bottom">("top");
+  const [swipeOffset, setSwipeOffset] = useState(0);
+  const [isPastThreshold, setIsPastThreshold] = useState(false);
+
   const pickerRef = useRef<HTMLDivElement>(null);
   const bubbleRef = useRef<HTMLDivElement>(null);
+  const touchStartX = useRef<number>(0);
+  const touchStartY = useRef<number>(0);
+  const isSwipingHorizontal = useRef<boolean>(false);
+  const hasVibrated = useRef<boolean>(false);
 
   if (message.senderId === "system") {
     return (
@@ -31,7 +44,7 @@ export function MessageBubble({
     );
   }
 
-  const { isSelf, text, timestamp, status, reactions } = message;
+  const { isSelf, text, timestamp, status, reactions, replyTo } = message;
   const timeString = new Date(timestamp).toLocaleTimeString([], {
     hour: "2-digit",
     minute: "2-digit",
@@ -45,7 +58,6 @@ export function MessageBubble({
       const parent = bubbleRef.current.closest(".overflow-y-auto") || bubbleRef.current.parentElement;
       if (parent) {
         const parentRect = parent.getBoundingClientRect();
-        // If distance between top of bubble and top of scroll parent is less than 60px, place below!
         if (bubbleRect.top - parentRect.top < 60) {
           setPlacement("bottom");
           return;
@@ -71,6 +83,74 @@ export function MessageBubble({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [showPicker]);
 
+  // Touch Swipe-to-reply handlers
+  const handleTouchStart = (e: React.TouchEvent) => {
+    if (!onReply) return;
+    touchStartX.current = e.touches[0].clientX;
+    touchStartY.current = e.touches[0].clientY;
+    isSwipingHorizontal.current = false;
+    hasVibrated.current = false;
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (!onReply) return;
+    const currentX = e.touches[0].clientX;
+    const currentY = e.touches[0].clientY;
+    const diffX = currentX - touchStartX.current;
+    const diffY = currentY - touchStartY.current;
+
+    // Detect if user intended horizontal swipe vs vertical scroll
+    if (!isSwipingHorizontal.current) {
+      if (Math.abs(diffX) > 8 && Math.abs(diffX) > Math.abs(diffY) * 1.2) {
+        isSwipingHorizontal.current = true;
+      } else if (Math.abs(diffY) > 8) {
+        return;
+      }
+    }
+
+    if (isSwipingHorizontal.current) {
+      // Swiping to the right
+      if (diffX > 0) {
+        // Damped offset with rubber-band curve
+        const clamped = Math.min(diffX * 0.45, 60);
+        setSwipeOffset(clamped);
+        const reached = clamped >= 36;
+        setIsPastThreshold(reached);
+
+        if (reached && !hasVibrated.current) {
+          if (typeof navigator !== "undefined" && "vibrate" in navigator) {
+            try {
+              navigator.vibrate(15);
+            } catch {}
+          }
+          hasVibrated.current = true;
+        } else if (!reached) {
+          hasVibrated.current = false;
+        }
+      } else {
+        setSwipeOffset(0);
+        setIsPastThreshold(false);
+      }
+    }
+  };
+
+  const handleTouchEnd = () => {
+    if (isSwipingHorizontal.current && onReply && isPastThreshold) {
+      onReply(message);
+    }
+    setSwipeOffset(0);
+    setIsPastThreshold(false);
+    isSwipingHorizontal.current = false;
+    hasVibrated.current = false;
+  };
+
+  const handleTouchCancel = () => {
+    setSwipeOffset(0);
+    setIsPastThreshold(false);
+    isSwipingHorizontal.current = false;
+    hasVibrated.current = false;
+  };
+
   const handleSelectEmoji = (emoji: string) => {
     if (onToggleReaction) {
       onToggleReaction(message.id, emoji);
@@ -82,12 +162,48 @@ export function MessageBubble({
 
   return (
     <div
+      id={`msg-${message.id}`}
       ref={bubbleRef}
-      className={`group relative flex flex-col mb-2.5 animate-slide-up ${
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
+      onTouchCancel={handleTouchCancel}
+      className={`group relative flex flex-col mb-2.5 animate-slide-up transition-colors duration-500 rounded-xl ${
         isSelf ? "items-end" : "items-start"
       }`}
     >
-      <div className={`relative flex items-center gap-1.5 ${isSelf ? "flex-row-reverse" : "flex-row"}`}>
+      {/* Touch Swipe-to-Reply Animated Indicator */}
+      {swipeOffset > 0 && (
+        <div
+          className="absolute left-1 top-1/2 -translate-y-1/2 flex items-center justify-center pointer-events-none z-10"
+          style={{
+            opacity: swipeOffset > 6 ? Math.min((swipeOffset - 6) / 24, 1) : 0,
+            transform: `translateX(${Math.max(0, swipeOffset - 36)}px) scale(${
+              isPastThreshold ? 1.15 : Math.max(0.7, swipeOffset / 36)
+            })`,
+            transition: swipeOffset === 0 ? "transform 0.2s ease-out, opacity 0.2s ease-out" : "none",
+          }}
+        >
+          <div
+            className={`p-1.5 rounded-full border shadow-md transition-all ${
+              isPastThreshold
+                ? "bg-signal text-ink border-signal shadow-signal/30 ring-2 ring-signal/40"
+                : "bg-surface-raised text-signal border-line-bright"
+            }`}
+          >
+            <Reply className="w-3.5 h-3.5" />
+          </div>
+        </div>
+      )}
+
+      {/* Bubble Row with Buttons and Message Body */}
+      <div
+        className={`relative flex items-center gap-1.5 ${isSelf ? "flex-row-reverse" : "flex-row"}`}
+        style={{
+          transform: `translateX(${swipeOffset}px)`,
+          transition: swipeOffset === 0 ? "transform 0.2s cubic-bezier(0.2, 0, 0, 1)" : "none",
+        }}
+      >
         {/* Message Bubble Body */}
         <div
           className={`max-w-[85%] sm:max-w-[75%] px-3.5 py-2 rounded-xl text-sm leading-relaxed break-words font-body select-text ${
@@ -96,22 +212,70 @@ export function MessageBubble({
               : "bg-surface-raised text-paper border border-line rounded-bl-xs shadow-sm"
           }`}
         >
-          {text}
+          {/* Quoted Replied Message Block */}
+          {replyTo && (
+            <button
+              type="button"
+              onClick={() => onScrollToMessage?.(replyTo.id)}
+              className={`w-full text-left mb-1.5 px-2.5 py-1.5 rounded-lg text-xs transition-colors flex flex-col gap-0.5 cursor-pointer select-none group/quote ${
+                isSelf
+                  ? "bg-black/15 hover:bg-black/25 text-ink border-l-2 border-ink/70"
+                  : "bg-surface/90 hover:bg-surface text-paper border-l-2 border-signal"
+              }`}
+              title="Jump to quoted message"
+            >
+              <div className="flex items-center gap-1 font-mono font-semibold text-[10px] opacity-90">
+                <Reply className="w-2.5 h-2.5 inline shrink-0" />
+                <span className="truncate">
+                  {replyTo.senderId === currentUserId
+                    ? "You"
+                    : partnerDisplayName || replyTo.senderName || "Partner"}
+                </span>
+              </div>
+              <p className="line-clamp-1 truncate text-[11px] opacity-80 font-normal font-sans">
+                {replyTo.text}
+              </p>
+            </button>
+          )}
+
+          {/* Main Message Text */}
+          <div className="whitespace-pre-wrap">{text}</div>
         </div>
 
-        {/* Reaction Trigger Button (Reveals on hover / active) */}
-        {onToggleReaction && (
-          <button
-            type="button"
-            onClick={() => setShowPicker(!showPicker)}
-            aria-label="React to message"
-            className={`opacity-0 group-hover:opacity-100 focus:opacity-100 p-1 rounded-full bg-surface hover:bg-surface-raised border border-line text-ash hover:text-paper transition-all duration-150 shrink-0 shadow-xs ${
-              showPicker ? "!opacity-100 bg-surface-raised text-signal" : ""
-            }`}
-          >
-            <SmilePlus className="w-3.5 h-3.5" />
-          </button>
-        )}
+        {/* Hover / Action Buttons Container (Reply + Reaction) */}
+        <div
+          className={`flex items-center gap-1 shrink-0 ${
+            isSelf ? "flex-row-reverse" : "flex-row"
+          }`}
+        >
+          {/* Reply Button (Reveals on hover / focus) */}
+          {onReply && (
+            <button
+              type="button"
+              onClick={() => onReply(message)}
+              aria-label="Reply to message"
+              title="Reply to message"
+              className="opacity-0 group-hover:opacity-100 focus:opacity-100 p-1 rounded-full bg-surface hover:bg-surface-raised border border-line text-ash hover:text-signal hover:border-signal/40 transition-all duration-150 shrink-0 shadow-xs active:scale-95"
+            >
+              <Reply className="w-3.5 h-3.5" />
+            </button>
+          )}
+
+          {/* Reaction Trigger Button (Reveals on hover / focus) */}
+          {onToggleReaction && (
+            <button
+              type="button"
+              onClick={() => setShowPicker(!showPicker)}
+              aria-label="React to message"
+              title="React to message"
+              className={`opacity-0 group-hover:opacity-100 focus:opacity-100 p-1 rounded-full bg-surface hover:bg-surface-raised border border-line text-ash hover:text-paper transition-all duration-150 shrink-0 shadow-xs active:scale-95 ${
+                showPicker ? "!opacity-100 bg-surface-raised text-signal border-signal/40" : ""
+              }`}
+            >
+              <SmilePlus className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
 
         {/* Floating Emoji Picker Popover (Dynamic Top vs Bottom) */}
         {showPicker && (
@@ -186,5 +350,5 @@ export function MessageBubble({
       </div>
     </div>
   );
-}
+});
 

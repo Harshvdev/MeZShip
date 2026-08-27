@@ -1,8 +1,15 @@
+export interface MessageReplyInfo {
+  id: string;
+  senderId: string;
+  senderName?: string;
+  text: string;
+}
+
 export type WebSocketClientMessage =
   | { type: "join_queue"; userId: string; displayName: string; lat: number; lng: number; radius: number; campusIds?: string[] }
   | { type: "update_location"; lat: number; lng: number; radius?: number }
   | { type: "leave_queue"; userId: string }
-  | { type: "message"; text: string; clientMsgId?: string }
+  | { type: "message"; text: string; clientMsgId?: string; replyTo?: MessageReplyInfo }
   | { type: "reaction"; messageId: string; emoji: string }
   | { type: "typing_start" }
   | { type: "typing_stop" }
@@ -16,7 +23,7 @@ export type WebSocketServerMessage =
   | { type: "match_found"; matchId: string; distanceMeters: number; hasPreciseDistance?: boolean; partner: { userId: string; displayName: string }; campusId?: string }
   | { type: "chat_ready"; matchId: string; userId: string }
   | { type: "partner_connected"; message: string }
-  | { type: "message"; id: string; senderId: string; text: string; timestamp: number }
+  | { type: "message"; id: string; senderId: string; text: string; timestamp: number; replyTo?: MessageReplyInfo }
   | { type: "message_ack"; clientMsgId: string; id: string; timestamp: number }
   | { type: "reaction"; messageId: string; emoji: string; senderId: string }
   | { type: "typing_start"; senderId: string }

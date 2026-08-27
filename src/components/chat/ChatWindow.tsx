@@ -1,20 +1,22 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
-import { Send, MapPin, Radio, ShieldAlert, UserX, LogOut, MoreVertical, SkipForward } from "lucide-react";
+import { useState, useRef, useEffect, useCallback } from "react";
+import { Send, MapPin, Radio, ShieldAlert, UserX, LogOut, MoreVertical, SkipForward, Reply, X } from "lucide-react";
 import { MessageBubble } from "./MessageBubble";
 import type { ChatMessage, PartnerInfo } from "@/hooks/useChatSocket";
+import type { MessageReplyInfo } from "@/lib/protocol";
 import { formatDistance } from "@/lib/distance";
 
 interface ChatWindowProps {
   partner: PartnerInfo | null;
   messages: ChatMessage[];
   currentUserId?: string;
+  currentUserDisplayName?: string;
   partnerLeaveReason?: "skip" | "leave" | "disconnect" | null;
   isPartnerTyping?: boolean;
   onTypingChange?: (isTyping: boolean) => void;
   onToggleReaction?: (messageId: string, emoji: string) => void;
-  onSendMessage: (text: string) => void;
+  onSendMessage: (text: string, replyTo?: MessageReplyInfo) => void;
   onSkip: () => void;
   onLeave: () => void;
   onOpenReport: () => void;
@@ -25,6 +27,7 @@ export function ChatWindow({
   partner,
   messages,
   currentUserId,
+  currentUserDisplayName,
   partnerLeaveReason,
   isPartnerTyping = false,
   onTypingChange,
@@ -38,6 +41,7 @@ export function ChatWindow({
   const [inputText, setInputText] = useState("");
   const [matchSeconds, setMatchSeconds] = useState(0);
   const [showSafetyMenu, setShowSafetyMenu] = useState(false);
+  const [replyingTo, setReplyingTo] = useState<ChatMessage | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -49,6 +53,13 @@ export function ChatWindow({
     return () => clearInterval(timer);
   }, []);
 
+  // Clear active reply when partner leaves or skips
+  useEffect(() => {
+    if (partnerLeaveReason) {
+      setReplyingTo(null);
+    }
+  }, [partnerLeaveReason]);
+
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
@@ -59,6 +70,22 @@ export function ChatWindow({
 
   useEffect(() => {
     inputRef.current?.focus();
+  }, []);
+
+  const handleReply = useCallback((message: ChatMessage) => {
+    setReplyingTo(message);
+    inputRef.current?.focus();
+  }, []);
+
+  const handleScrollToMessage = useCallback((messageId: string) => {
+    const el = document.getElementById(`msg-${messageId}`);
+    if (el) {
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+      el.classList.add("ring-2", "ring-signal", "bg-signal/10");
+      setTimeout(() => {
+        el.classList.remove("ring-2", "ring-signal", "bg-signal/10");
+      }, 1200);
+    }
   }, []);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -73,8 +100,29 @@ export function ChatWindow({
     e.preventDefault();
     if (!inputText.trim() || partnerLeaveReason) return;
     if (onTypingChange) onTypingChange(false);
-    onSendMessage(inputText);
+
+    const replyPayload: MessageReplyInfo | undefined = replyingTo
+      ? {
+          id: replyingTo.id,
+          senderId: replyingTo.senderId,
+          senderName: replyingTo.isSelf
+            ? (currentUserDisplayName || "You")
+            : (partner?.displayName || "Partner"),
+          text: replyingTo.text,
+        }
+      : undefined;
+
+    onSendMessage(inputText, replyPayload);
     setInputText("");
+    setReplyingTo(null);
+  };
+
+  const handleInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Escape" && replyingTo) {
+      e.preventDefault();
+      e.stopPropagation();
+      setReplyingTo(null);
+    }
   };
 
   const isPartnerLeft = Boolean(partnerLeaveReason);
@@ -204,7 +252,10 @@ export function ChatWindow({
               key={msg.id}
               message={msg}
               currentUserId={currentUserId}
+              partnerDisplayName={partner?.displayName}
               onToggleReaction={onToggleReaction}
+              onReply={handleReply}
+              onScrollToMessage={handleScrollToMessage}
             />
           ))
         )}
@@ -226,8 +277,40 @@ export function ChatWindow({
         <div ref={messagesEndRef} />
       </div>
 
+      {/* Active Replying To Banner */}
+      {replyingTo && (
+        <div className="px-3 sm:px-4 py-2 bg-surface-raised/95 border-t border-line flex items-center justify-between gap-2.5 animate-slide-up backdrop-blur-xs">
+          <div className="flex items-center gap-2.5 min-w-0 flex-1">
+            <div className="w-1 self-stretch rounded-full bg-signal shrink-0" />
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-1.5 font-mono text-[11px] font-semibold text-signal">
+                <Reply className="w-3 h-3 shrink-0" />
+                <span>
+                  Replying to{" "}
+                  {replyingTo.isSelf
+                    ? "yourself"
+                    : partner?.displayName || "Partner"}
+                </span>
+              </div>
+              <p className="text-ash/90 text-xs font-body truncate">
+                {replyingTo.text}
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setReplyingTo(null)}
+            className="p-1 rounded-lg text-ash hover:text-paper hover:bg-surface border border-transparent hover:border-line transition-colors shrink-0"
+            aria-label="Cancel reply"
+            title="Cancel reply [Esc]"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
       {/* Subtle Typing Status Bar above Composer */}
-      {isPartnerTyping && (
+      {isPartnerTyping && !replyingTo && (
         <div className="px-3.5 py-1 bg-surface-raised/90 border-t border-line text-[11px] font-mono text-signal flex items-center gap-1.5 animate-fade-in">
           <span className="w-1.5 h-1.5 rounded-full bg-signal animate-pulse" />
           <span>{partner?.displayName || "Partner"} is typing...</span>
@@ -264,11 +347,15 @@ export function ChatWindow({
         {/* Message Input Form */}
         <form onSubmit={handleSend} className="flex-1 flex items-center gap-1.5 sm:gap-2 min-w-0">
           <input
+            id="chat-message-input"
+            name="chatMessage"
+            autoComplete="off"
             ref={inputRef}
             type="text"
             value={inputText}
             disabled={isPartnerLeft}
             onChange={handleInputChange}
+            onKeyDown={handleInputKeyDown}
             onInput={(e) => {
               const val = (e.target as HTMLInputElement).value;
               if (onTypingChange && !partnerLeaveReason) {
@@ -279,6 +366,8 @@ export function ChatWindow({
             placeholder={
               isPartnerLeft
                 ? "Partner left. Click 'Skip' or 'Leave'..."
+                : replyingTo
+                ? `Replying to ${replyingTo.isSelf ? "yourself" : (partner?.displayName || "Partner")}...`
                 : "Type ephemeral message (Enter to send)..."
             }
             maxLength={500}

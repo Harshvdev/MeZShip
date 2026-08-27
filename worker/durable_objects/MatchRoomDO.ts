@@ -283,6 +283,23 @@ export class MatchRoomDO extends DurableObject<Env> {
         const msgId = `msg_${crypto.randomUUID()}`;
         const now = Date.now();
 
+        // Parse & validate optional replyTo payload
+        let replyTo: { id: string; senderId: string; senderName?: string; text: string } | undefined = undefined;
+        if (data.replyTo && typeof data.replyTo === "object") {
+          const rId = String(data.replyTo.id || "").trim();
+          const rSenderId = String(data.replyTo.senderId || "").trim();
+          const rSenderName = data.replyTo.senderName ? String(data.replyTo.senderName).slice(0, 50) : undefined;
+          const rText = String(data.replyTo.text || "").trim().slice(0, 500);
+          if (rId && rText) {
+            replyTo = {
+              id: rId,
+              senderId: rSenderId,
+              ...(rSenderName ? { senderName: rSenderName } : {}),
+              text: rText,
+            };
+          }
+        }
+
         // Forward to other participant(s)
         const payload = JSON.stringify({
           type: "message",
@@ -290,6 +307,7 @@ export class MatchRoomDO extends DurableObject<Env> {
           senderId,
           text,
           timestamp: now,
+          ...(replyTo ? { replyTo } : {}),
         });
 
         const activeSockets = this.ctx.getWebSockets();
