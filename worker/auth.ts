@@ -4,6 +4,8 @@ import type { Env, AuthenticatedUser } from "./types";
 let jwksCache: ReturnType<typeof createRemoteJWKSet> | null = null;
 let lastJwksUrl = "";
 
+const tokenVerificationCache = new Map<string, { user: AuthenticatedUser; expiresAt: number }>();
+
 function getJWKS(jwksUrl: string) {
   if (!jwksCache || lastJwksUrl !== jwksUrl) {
     jwksCache = createRemoteJWKSet(new URL(jwksUrl), {
@@ -29,6 +31,12 @@ export async function verifySupabaseToken(
   }
   if (!token) return null;
 
+  const now = Date.now();
+  const cached = tokenVerificationCache.get(token);
+  if (cached && cached.expiresAt > now) {
+    return cached.user;
+  }
+
   try {
     let header: { alg?: string; typ?: string } = {};
     try {
@@ -42,6 +50,7 @@ export async function verifySupabaseToken(
     }
 
     const alg = header.alg || "HS256";
+    let verifiedUser: AuthenticatedUser | null = null;
 
     // 1. Asymmetric verification (RS256 / ES256 via JWKS)
     if (alg === "RS256" || alg === "ES256") {
@@ -72,30 +81,33 @@ export async function verifySupabaseToken(
             algorithms: ["ES256", "RS256"],
           });
           const timeoutPromise = new Promise<null>((_, reject) =>
-            setTimeout(() => reject(new Error("JWKS verify timeout")), 2500)
+            setTimeout(() => reject(new Error("JWKS verify timeout")), 1200)
           );
           const result = (await Promise.race([verifyPromise, timeoutPromise])) as any;
           if (result && result.payload && result.payload.sub) {
-            return {
+            verifiedUser = {
               userId: result.payload.sub,
               email: typeof result.payload.email === "string" ? result.payload.email : undefined,
             };
           }
         } catch (jwksErr) {
-          console.warn("JWKS verification error:", jwksErr);
+          // In development, do not fail on JWKS network timeout
+          if (env.NODE_ENV !== "development") {
+            console.warn("JWKS verification error:", jwksErr);
+          }
         }
       }
     }
 
     // 2. Symmetric verification (HS256 via SUPABASE_JWT_SECRET if present)
-    if (alg === "HS256" && env.SUPABASE_JWT_SECRET) {
+    if (!verifiedUser && alg === "HS256" && env.SUPABASE_JWT_SECRET) {
       try {
         const secret = new TextEncoder().encode(env.SUPABASE_JWT_SECRET);
         const { payload } = await jwtVerify(token, secret, {
           algorithms: ["HS256"],
         });
         if (payload.sub) {
-          return {
+          verifiedUser = {
             userId: payload.sub,
             email: typeof payload.email === "string" ? payload.email : undefined,
           };
@@ -106,34 +118,27 @@ export async function verifySupabaseToken(
     }
 
     // 3. Claims & Expiration validation (Dev-only fallback if signature could not be verified)
-    if (env.NODE_ENV === "development") {
+    if (!verifiedUser && env.NODE_ENV === "development") {
       const payload = decodeJwt(token);
-      if (!payload || !payload.sub) {
-        return null;
+      if (payload && payload.sub) {
+        const nowSeconds = Math.floor(Date.now() / 1000);
+        // Allow clock skew in dev
+        if (!payload.nbf || nowSeconds >= payload.nbf - 60) {
+          verifiedUser = {
+            userId: payload.sub,
+            email: typeof payload.email === "string" ? payload.email : undefined,
+          };
+        }
       }
+    }
 
-      const nowSeconds = Math.floor(Date.now() / 1000);
-
-      // Check expiration timestamp (allow 60s clock skew in dev)
-      if (payload.exp && nowSeconds > payload.exp + 60) {
-        console.warn("Dev mode: accepting sub from expired JWT for testing:", payload.sub);
-        return {
-          userId: payload.sub,
-          email: typeof payload.email === "string" ? payload.email : undefined,
-        };
-      }
-
-      // Check not-before timestamp
-      if (payload.nbf && nowSeconds < payload.nbf - 60) {
-        console.warn("JWT token is not yet active:", { nbf: payload.nbf, now: nowSeconds });
-        return null;
-      }
-
-      console.warn("Dev mode: accepted unverified JWT claims for local development testing:", payload.sub);
-      return {
-        userId: payload.sub,
-        email: typeof payload.email === "string" ? payload.email : undefined,
-      };
+    if (verifiedUser) {
+      // Cache verified token in memory for fast repeat lookups (up to 60s)
+      tokenVerificationCache.set(token, {
+        user: verifiedUser,
+        expiresAt: now + 60000,
+      });
+      return verifiedUser;
     }
 
     // In production, unverified tokens must strictly be rejected

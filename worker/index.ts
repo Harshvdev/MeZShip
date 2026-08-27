@@ -1,9 +1,8 @@
 import { verifySupabaseToken } from "./auth";
-import { getPrisma } from "./lib/db";
+import { getSupabaseClient, getSupabaseAdmin } from "./lib/supabase";
 import { CampusMatcherDO } from "./durable_objects/CampusMatcherDO";
 import { MatchRoomDO } from "./durable_objects/MatchRoomDO";
 import type { Env } from "./types";
-import { BanType, ReportReason } from "@prisma/client";
 import {
   isCoordinateInsideCampus,
   haversineDistanceMeters,
@@ -39,7 +38,7 @@ function invalidateBanCache(userId: string) {
   banCache.delete(userId);
 }
 
-async function checkUserBanCached(userId: string, env: Env): Promise<{ isBanned: boolean; ban: any }> {
+async function checkUserBanCached(userId: string, env: Env, authHeader?: string | null): Promise<{ isBanned: boolean; ban: any }> {
   const now = Date.now();
   const cached = banCache.get(userId);
   if (cached && cached.expiresAt > now) {
@@ -47,30 +46,32 @@ async function checkUserBanCached(userId: string, env: Env): Promise<{ isBanned:
   }
 
   try {
-    const prisma = getPrisma(env);
-    const dbPromise = prisma.userBan.findFirst({
-      where: {
-        user_id: userId,
-        OR: [{ expires_at: null }, { expires_at: { gt: new Date() } }],
-      },
-    });
-    const timeoutPromise = new Promise<null>((_, reject) =>
-      setTimeout(() => reject(new Error("DB ban check timeout")), 2000)
-    );
+    const supabase = getSupabaseClient(env, authHeader);
+    if (supabase) {
+      const nowIso = new Date().toISOString();
+      const { data: activeBan, error } = await supabase
+        .from("user_bans")
+        .select("*")
+        .eq("user_id", userId)
+        .or(`expires_at.is.null,expires_at.gt.${nowIso}`)
+        .maybeSingle();
 
-    const activeBan = (await Promise.race([dbPromise, timeoutPromise])) as any;
+      if (error) {
+        console.warn("Supabase ban check error:", error);
+      }
 
-    const isBanned = Boolean(activeBan);
-    banCache.set(userId, {
-      isBanned,
-      ban: activeBan || null,
-      expiresAt: now + (isBanned ? 15000 : 60000), // Cache not-banned for 60s, banned for 15s
-    });
-    return { isBanned, ban: activeBan || null };
+      const isBanned = Boolean(activeBan);
+      banCache.set(userId, {
+        isBanned,
+        ban: activeBan || null,
+        expiresAt: now + (isBanned ? 15000 : 60000), // Cache not-banned for 60s, banned for 15s
+      });
+      return { isBanned, ban: activeBan || null };
+    }
   } catch (err) {
     console.warn("User ban check skipped/failed:", err);
-    return { isBanned: cached ? cached.isBanned : false, ban: cached ? cached.ban : null };
   }
+  return { isBanned: cached ? cached.isBanned : false, ban: cached ? cached.ban : null };
 }
 
 export default {
@@ -167,9 +168,51 @@ export default {
       }
     }
 
-    if (url.pathname === "/api/campuses" && request.method === "GET") {
-      return jsonResponse({ campuses: [] });
-    }
+      if (url.pathname === "/api/campuses" && request.method === "GET") {
+        return jsonResponse({ campuses: [] });
+      }
+
+      if (url.pathname === "/api/location/ip" && request.method === "GET") {
+        const cf = (request as any).cf;
+        const rawLat = cf?.latitude ? parseFloat(cf.latitude) : null;
+        const rawLng = cf?.longitude ? parseFloat(cf.longitude) : null;
+        const city = cf?.city || null;
+        const region = cf?.region || null;
+        const country = cf?.country || null;
+
+        const hasValidCoords =
+          typeof rawLat === "number" &&
+          typeof rawLng === "number" &&
+          Number.isFinite(rawLat) &&
+          Number.isFinite(rawLng);
+
+        if (hasValidCoords) {
+          const parts = [city, region, country].filter(Boolean);
+          const locationName = parts.length > 0 ? `${parts.join(", ")} (Edge IP)` : "Approximate Edge IP Location";
+          return jsonResponse({
+            lat: rawLat,
+            lng: rawLng,
+            accuracy: 10000, // ~10km typical IP accuracy
+            city,
+            region,
+            country,
+            locationName,
+            source: "ip_edge",
+          });
+        }
+
+        // Local development or unavailable CF geolocation fallback
+        return jsonResponse({
+          lat: null,
+          lng: null,
+          accuracy: null,
+          city: null,
+          region: null,
+          country: null,
+          locationName: null,
+          source: "ip_unavailable",
+        });
+      }
 
     // --------------------------------------------------------------------------
     // 3. Authenticated HTTP Routes
@@ -181,10 +224,8 @@ export default {
       return errorResponse("Unauthorized", 401);
     }
 
-    const prisma = getPrisma(env);
-
     // Ban Check Middleware (Cached)
-    const banStatus = await checkUserBanCached(authUser.userId, env);
+    const banStatus = await checkUserBanCached(authUser.userId, env, authHeader);
 
     if (url.pathname === "/api/bans/check" && request.method === "GET") {
       return jsonResponse({
@@ -197,20 +238,27 @@ export default {
       return errorResponse("Your account is currently banned.", 403);
     }
 
+    const supabase = getSupabaseClient(env, authHeader);
+
     // User Profile
     if (url.pathname === "/api/profile") {
       if (request.method === "GET") {
         try {
-          const fetchPromise = prisma.userProfile.findUnique({
-            where: { user_id: authUser.userId },
-          });
-          const timeoutPromise = new Promise<null>((_, reject) =>
-            setTimeout(() => reject(new Error("DB timeout")), 2500)
-          );
+          if (supabase) {
+            const { data: profile, error } = await supabase
+              .from("user_profiles")
+              .select("user_id, display_name, created_at, updated_at")
+              .eq("user_id", authUser.userId)
+              .maybeSingle();
 
-          let profile = (await Promise.race([fetchPromise, timeoutPromise])) as any;
+            if (error) {
+              console.warn("Supabase profile GET error:", error);
+            }
 
-          if (!profile) {
+            if (profile) {
+              return jsonResponse({ profile, isFallback: false, isAutoGenerated: false });
+            }
+
             // Generate default pseudonymous display name
             const animals = ["Fox", "Owl", "Panda", "Wolf", "Hawk", "Otter", "Lynx", "Falcon"];
             const colors = ["Blue", "Silver", "Crimson", "Golden", "Jade", "Cosmic", "Shadow"];
@@ -218,85 +266,119 @@ export default {
               animals[Math.floor(Math.random() * animals.length)]
             }${Math.floor(100 + Math.random() * 900)}`;
 
-            try {
-              profile = await prisma.userProfile.create({
-                data: {
-                  user_id: authUser.userId,
-                  display_name: randomName,
-                },
-              });
-            } catch {
-              profile = {
+            const { data: newProfile, error: insertError } = await supabase
+              .from("user_profiles")
+              .insert({
+                user_id: authUser.userId,
+                display_name: randomName,
+              })
+              .select("user_id, display_name, created_at, updated_at")
+              .maybeSingle();
+
+            if (insertError) {
+              console.warn("Supabase profile insert error:", insertError);
+            }
+
+            return jsonResponse({
+              profile: newProfile || {
                 user_id: authUser.userId,
                 display_name: randomName,
                 created_at: new Date().toISOString(),
                 updated_at: new Date().toISOString(),
-              };
-            }
+              },
+              isFallback: false,
+              isAutoGenerated: true,
+            });
           }
-
-          return jsonResponse({ profile });
         } catch (dbErr) {
-          console.warn("DB profile lookup timeout/error, using fallback:", dbErr);
-          return jsonResponse({
-            profile: {
-              user_id: authUser.userId,
-              display_name: `Echo${authUser.userId.slice(0, 4)}`,
-              created_at: new Date().toISOString(),
-              updated_at: new Date().toISOString(),
-            },
-          });
+          console.warn("Supabase profile lookup error:", dbErr);
         }
+
+        return jsonResponse({
+          profile: {
+            user_id: authUser.userId,
+            display_name: `Echo${authUser.userId.slice(0, 4)}`,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          },
+          isFallback: true,
+          isAutoGenerated: true,
+        });
       }
 
       if (request.method === "POST") {
-        const body: { displayName?: string } = await request.json();
-        const displayName = (body.displayName || "").trim();
+        try {
+          const body: { displayName?: string } = await request.json();
+          const displayName = (body.displayName || "").trim();
 
-        if (!displayName || displayName.length < 2 || displayName.length > 30) {
-          return errorResponse("Display name must be between 2 and 30 characters.");
+          if (!displayName || displayName.length < 1 || displayName.length > 30) {
+            return errorResponse("Display name must be between 1 and 30 characters.");
+          }
+
+          if (supabase) {
+            const { data: profile, error } = await supabase
+              .from("user_profiles")
+              .upsert(
+                {
+                  user_id: authUser.userId,
+                  display_name: displayName,
+                  updated_at: new Date().toISOString(),
+                },
+                { onConflict: "user_id" }
+              )
+              .select("user_id, display_name, created_at, updated_at")
+              .single();
+
+            if (error) {
+              console.error("Failed to update profile in Supabase:", error);
+              return errorResponse("Failed to update display name.", 500);
+            }
+
+            return jsonResponse({ profile, isFallback: false, isAutoGenerated: false });
+          }
+        } catch (postErr) {
+          console.error("Failed to update profile:", postErr);
+          return errorResponse("Failed to update display name.", 500);
         }
-
-        const profile = await prisma.userProfile.upsert({
-          where: { user_id: authUser.userId },
-          update: { display_name: displayName },
-          create: {
-            user_id: authUser.userId,
-            display_name: displayName,
-          },
-        });
-
-        return jsonResponse({ profile });
       }
     }
 
     // Campus Preferences
     if (url.pathname === "/api/preferences") {
       if (request.method === "GET") {
-        const prefs = await prisma.userCampusPreference.findMany({
-          where: { user_id: authUser.userId },
-          select: { campus_id: true },
-        });
-        return jsonResponse({ preferences: prefs.map((p) => p.campus_id) });
+        try {
+          if (supabase) {
+            const { data: prefs } = await supabase
+              .from("user_campus_preferences")
+              .select("campus_id")
+              .eq("user_id", authUser.userId);
+            return jsonResponse({ preferences: (prefs || []).map((p: any) => p.campus_id) });
+          }
+        } catch (err) {
+          console.warn("DB preferences lookup error:", err);
+        }
+        return jsonResponse({ preferences: [] });
       }
 
       if (request.method === "POST") {
         const body: { campusIds: string[] } = await request.json();
         const campusIds = Array.isArray(body.campusIds) ? body.campusIds : [];
 
-        // Replace preferences transactionally
-        await prisma.$transaction([
-          prisma.userCampusPreference.deleteMany({
-            where: { user_id: authUser.userId },
-          }),
-          prisma.userCampusPreference.createMany({
-            data: campusIds.map((cid) => ({
-              user_id: authUser.userId,
-              campus_id: cid,
-            })),
-            skipDuplicates: true,
-          }),
-        ]);
+        if (supabase) {
+          await supabase
+            .from("user_campus_preferences")
+            .delete()
+            .eq("user_id", authUser.userId);
+
+          if (campusIds.length > 0) {
+            await supabase.from("user_campus_preferences").insert(
+              campusIds.map((cid) => ({
+                user_id: authUser.userId,
+                campus_id: cid,
+              }))
+            );
+          }
+        }
 
         return jsonResponse({ success: true, campusIds });
       }
@@ -305,15 +387,18 @@ export default {
     // User Blocks
     if (url.pathname === "/api/blocks") {
       if (request.method === "GET") {
-        const blocks = await prisma.userBlock.findMany({
-          where: { blocker_user_id: authUser.userId },
-          include: {
-            blocked: {
-              select: { user_id: true, display_name: true },
-            },
-          },
-        });
-        return jsonResponse({ blocks });
+        try {
+          if (supabase) {
+            const { data: blocks } = await supabase
+              .from("user_blocks")
+              .select("blocked_user_id, blocked:user_profiles!blocked_user_id(user_id, display_name)")
+              .eq("blocker_user_id", authUser.userId);
+            return jsonResponse({ blocks: blocks || [] });
+          }
+        } catch (err) {
+          console.warn("DB blocks lookup error:", err);
+        }
+        return jsonResponse({ blocks: [] });
       }
 
       if (request.method === "POST") {
@@ -322,19 +407,15 @@ export default {
           return errorResponse("Invalid target user ID.");
         }
 
-        await prisma.userBlock.upsert({
-          where: {
-            blocker_user_id_blocked_user_id: {
+        if (supabase) {
+          await supabase.from("user_blocks").upsert(
+            {
               blocker_user_id: authUser.userId,
               blocked_user_id: body.targetUserId,
             },
-          },
-          update: {},
-          create: {
-            blocker_user_id: authUser.userId,
-            blocked_user_id: body.targetUserId,
-          },
-        });
+            { onConflict: "blocker_user_id,blocked_user_id" }
+          );
+        }
 
         // Notify CampusMatcherDO
         try {
@@ -357,12 +438,13 @@ export default {
 
     if (url.pathname.startsWith("/api/blocks/") && request.method === "DELETE") {
       const blockedUserId = url.pathname.replace("/api/blocks/", "");
-      await prisma.userBlock.deleteMany({
-        where: {
-          blocker_user_id: authUser.userId,
-          blocked_user_id: blockedUserId,
-        },
-      });
+      if (supabase) {
+        await supabase
+          .from("user_blocks")
+          .delete()
+          .eq("blocker_user_id", authUser.userId)
+          .eq("blocked_user_id", blockedUserId);
+      }
 
       // Notify CampusMatcherDO
       try {
@@ -389,7 +471,7 @@ export default {
       const body: {
         reportedUserId: string;
         matchId: string;
-        reason: ReportReason;
+        reason: string;
         details?: string;
       } = await request.json();
 
@@ -429,30 +511,78 @@ export default {
         );
       }
 
-      // Check distinct reporter constraint
-      const existingReport = await prisma.report.findUnique({
-        where: {
-          reporter_user_id_reported_user_id: {
-            reporter_user_id: authUser.userId,
-            reported_user_id: reportedUserId,
-          },
-        },
-      });
+      if (supabase) {
+        // Check distinct reporter constraint
+        const { data: existingReport } = await supabase
+          .from("reports")
+          .select("id")
+          .eq("reporter_user_id", authUser.userId)
+          .eq("reported_user_id", reportedUserId)
+          .maybeSingle();
 
-      if (existingReport) {
-        return errorResponse("You have already reported this user.", 409);
-      }
+        if (existingReport) {
+          return errorResponse("You have already reported this user.", 409);
+        }
 
-      // Persist the report
-      await prisma.report.create({
-        data: {
+        // Persist the report
+        await supabase.from("reports").insert({
           reporter_user_id: authUser.userId,
           reported_user_id: reportedUserId,
           match_id: matchId,
           reason,
           details: details ? details.trim() : null,
-        },
-      });
+        });
+
+        // Calculate total lifetime distinct reporters for this target
+        const { count } = await supabase
+          .from("reports")
+          .select("*", { count: "exact", head: true })
+          .eq("reported_user_id", reportedUserId);
+
+        const distinctCount = count || 1;
+        const t24h = parseInt(env.REPORT_THRESHOLD_24H || "6", 10);
+        const t7d = parseInt(env.REPORT_THRESHOLD_7D || "11", 10);
+        const tPerm = parseInt(env.REPORT_THRESHOLD_PERMANENT || "20", 10);
+
+        // Automated Ban Enforcement
+        if (distinctCount >= tPerm) {
+          await supabase.from("user_bans").upsert(
+            {
+              user_id: reportedUserId,
+              ban_type: "PERMANENT",
+              expires_at: null,
+              reason: `Exceeded permanent ban threshold (${distinctCount} distinct reports).`,
+            },
+            { onConflict: "user_id" }
+          );
+        } else if (distinctCount >= t7d) {
+          const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+          await supabase.from("user_bans").upsert(
+            {
+              user_id: reportedUserId,
+              ban_type: "TEMPORARY_7D",
+              expires_at: expiresAt,
+              reason: `Exceeded 7-day ban threshold (${distinctCount} distinct reports).`,
+            },
+            { onConflict: "user_id" }
+          );
+        } else if (distinctCount >= t24h) {
+          const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+          await supabase.from("user_bans").upsert(
+            {
+              user_id: reportedUserId,
+              ban_type: "TEMPORARY_24H",
+              expires_at: expiresAt,
+              reason: `Exceeded 24-hour ban threshold (${distinctCount} distinct reports).`,
+            },
+            { onConflict: "user_id" }
+          );
+        }
+
+        if (distinctCount >= t24h) {
+          invalidateBanCache(reportedUserId);
+        }
+      }
 
       // Add session report exclusion to CampusMatcherDO so they never match during this session
       try {
@@ -480,69 +610,6 @@ export default {
         );
       } catch (e) {
         console.error("Failed to terminate match room on report:", e);
-      }
-
-      // Calculate total lifetime distinct reporters for this target
-      const distinctCount = await prisma.report.count({
-        where: { reported_user_id: reportedUserId },
-      });
-
-      const t24h = parseInt(env.REPORT_THRESHOLD_24H || "6", 10);
-      const t7d = parseInt(env.REPORT_THRESHOLD_7D || "11", 10);
-      const tPerm = parseInt(env.REPORT_THRESHOLD_PERMANENT || "20", 10);
-
-      // Automated Ban Enforcement
-      if (distinctCount >= tPerm) {
-        await prisma.userBan.upsert({
-          where: { user_id: reportedUserId },
-          update: {
-            ban_type: BanType.PERMANENT,
-            expires_at: null,
-            reason: `Exceeded permanent ban threshold (${distinctCount} distinct reports).`,
-          },
-          create: {
-            user_id: reportedUserId,
-            ban_type: BanType.PERMANENT,
-            expires_at: null,
-            reason: `Exceeded permanent ban threshold (${distinctCount} distinct reports).`,
-          },
-        });
-      } else if (distinctCount >= t7d) {
-        const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
-        await prisma.userBan.upsert({
-          where: { user_id: reportedUserId },
-          update: {
-            ban_type: BanType.TEMPORARY_7D,
-            expires_at: expiresAt,
-            reason: `Exceeded 7-day ban threshold (${distinctCount} distinct reports).`,
-          },
-          create: {
-            user_id: reportedUserId,
-            ban_type: BanType.TEMPORARY_7D,
-            expires_at: expiresAt,
-            reason: `Exceeded 7-day ban threshold (${distinctCount} distinct reports).`,
-          },
-        });
-      } else if (distinctCount >= t24h) {
-        const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
-        await prisma.userBan.upsert({
-          where: { user_id: reportedUserId },
-          update: {
-            ban_type: BanType.TEMPORARY_24H,
-            expires_at: expiresAt,
-            reason: `Exceeded 24-hour ban threshold (${distinctCount} distinct reports).`,
-          },
-          create: {
-            user_id: reportedUserId,
-            ban_type: BanType.TEMPORARY_24H,
-            expires_at: expiresAt,
-            reason: `Exceeded 24-hour ban threshold (${distinctCount} distinct reports).`,
-          },
-        });
-      }
-
-      if (distinctCount >= t24h) {
-        invalidateBanCache(reportedUserId);
       }
 
       return jsonResponse({

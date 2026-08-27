@@ -1,7 +1,7 @@
 import { DurableObject } from "cloudflare:workers";
 import type { Env, WaitingUser } from "../types";
 import { haversineDistanceMeters } from "../lib/geo";
-import { getPrisma } from "../lib/db";
+import { getSupabaseAdmin } from "../lib/supabase";
 
 interface QueueEntry {
   ws: WebSocket;
@@ -70,17 +70,19 @@ export class CampusMatcherDO extends DurableObject<Env> {
   }
 
   /**
-   * Sync persistent blocks involving a specific user from Postgres
+   * Sync persistent blocks involving a specific user from Postgres via Supabase HTTPS
    */
   private async syncUserBlocksFromDb(userId: string): Promise<void> {
     try {
-      const prisma = getPrisma(this.env);
-      const blocks = await prisma.userBlock.findMany({
-        where: {
-          OR: [{ blocker_user_id: userId }, { blocked_user_id: userId }],
-        },
-        select: { blocker_user_id: true, blocked_user_id: true },
-      });
+      const supabase = getSupabaseAdmin(this.env);
+      if (!supabase) return;
+
+      const { data: blocks, error } = await supabase
+        .from("user_blocks")
+        .select("blocker_user_id, blocked_user_id")
+        .or(`blocker_user_id.eq.${userId},blocked_user_id.eq.${userId}`);
+
+      if (error || !blocks) return;
 
       let changed = false;
       for (const b of blocks) {
@@ -109,6 +111,14 @@ export class CampusMatcherDO extends DurableObject<Env> {
     const entryMap = new Map<string, QueueEntry>();
     for (const ws of sockets) {
       try {
+        // Ignore sockets that are closing, closed, or not yet open
+        if (ws.readyState !== 1 /* WebSocket.OPEN */) {
+          try {
+            ws.serializeAttachment(null);
+          } catch {}
+          continue;
+        }
+
         const user = ws.deserializeAttachment() as WaitingUser | null;
         if (user && user.userId) {
           const existing = entryMap.get(user.userId);
@@ -158,7 +168,16 @@ export class CampusMatcherDO extends DurableObject<Env> {
         return new Response("Missing userId", { status: 400 });
       }
 
-      if (!Number.isFinite(lat) || !Number.isFinite(lng) || (lat === 0 && lng === 0)) {
+      const isValidCoords =
+        Number.isFinite(lat) &&
+        Number.isFinite(lng) &&
+        lat >= -90 &&
+        lat <= 90 &&
+        lng >= -180 &&
+        lng <= 180 &&
+        (lat !== 0 || lng !== 0);
+
+      if (!isValidCoords) {
         return new Response("Valid location coordinates required to join matchmaking", { status: 400 });
       }
 
@@ -469,6 +488,11 @@ export class CampusMatcherDO extends DurableObject<Env> {
     });
 
     const best = eligibleMatches[0];
+
+    // Re-verify that both candidate and target sockets are still open (readyState === 1)
+    if (candidateEntry.ws.readyState !== 1 || best.other.ws.readyState !== 1) {
+      return;
+    }
 
     // MATCH FOUND!
     const matchId = `match_${crypto.randomUUID()}`;

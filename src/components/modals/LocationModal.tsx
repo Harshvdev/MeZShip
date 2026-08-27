@@ -136,10 +136,10 @@ export function LocationModal({
             <div className="flex items-center justify-between">
               <span className="text-xs font-semibold text-paper font-display flex items-center gap-1.5">
                 <MapPin className="w-3.5 h-3.5 text-signal" />
-                <span>Hardware Fix</span>
+                <span>Location Fix</span>
               </span>
               <span className="px-2 py-0.5 rounded font-mono text-[10px] font-semibold bg-surface border border-line text-ash">
-                BROWSER SENSOR
+                AUTO SENSOR
               </span>
             </div>
 
@@ -164,8 +164,8 @@ export function LocationModal({
                 )}
                 {locationName && (
                   <div className="text-[11px] text-ash px-1 flex items-center justify-between">
-                    <span>Sensor Source:</span>
-                    <span className="text-paper truncate max-w-[200px]">{locationName}</span>
+                    <span>Fix Source:</span>
+                    <span className="text-paper truncate max-w-[220px]">{locationName}</span>
                   </div>
                 )}
               </div>
@@ -174,8 +174,8 @@ export function LocationModal({
                 <div className="flex items-start gap-2">
                   <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
                   <div className="leading-relaxed">
-                    <strong className="block font-semibold">Location Permission Required</strong>
-                    Location access is required to connect to nearby peers within your chosen radius. Please allow location permissions in your browser.
+                    <strong className="block font-semibold">Location Access Required</strong>
+                    Location access is required to connect to nearby peers within your chosen radius. Please allow location access or check network connection.
                   </div>
                 </div>
                 <button
@@ -184,7 +184,7 @@ export function LocationModal({
                   className="w-full py-2 px-3 rounded-lg bg-alert text-ink font-display font-bold text-xs hover:bg-alert/90 transition-colors flex items-center justify-center gap-1.5"
                 >
                   <RefreshCw className="w-3.5 h-3.5" />
-                  <span>Grant / Retry Location Permission</span>
+                  <span>Retry Location Fix</span>
                 </button>
               </div>
             )}
@@ -198,7 +198,7 @@ export function LocationModal({
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface hover:bg-surface-raised border border-line text-xs font-mono text-ash hover:text-paper transition-colors"
                 >
                   <RefreshCw className="w-3 h-3" />
-                  <span>Re-poll GPS</span>
+                  <span>Re-poll Location</span>
                 </button>
               </div>
             )}
