@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { SkipForward, ShieldAlert, UserX, LogOut, MoreVertical } from "lucide-react";
+import { ConfirmButton } from "./ConfirmButton";
 
 interface ActionBarProps {
   onSkip: () => void;
@@ -24,23 +25,25 @@ export function ActionBar({
     <div className="flex items-center justify-between p-3 border-t border-white/10 glass-panel relative">
       {/* Primary Actions */}
       <div className="flex items-center gap-2">
-        <button
-          onClick={onSkip}
+        <ConfirmButton
+          label="Skip"
+          confirmLabel="Confirm"
+          icon={<SkipForward className="w-4 h-4" />}
+          confirmIcon={<SkipForward className="w-4 h-4 animate-pulse" />}
+          onAction={onSkip}
+          variant="skip"
           disabled={disabled}
-          className="flex items-center gap-2 px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-medium text-sm transition-all shadow-md shadow-indigo-600/30"
-        >
-          <SkipForward className="w-4 h-4" />
-          <span>Skip</span>
-        </button>
+        />
 
-        <button
-          onClick={onLeave}
+        <ConfirmButton
+          label="Leave"
+          confirmLabel="Confirm"
+          icon={<LogOut className="w-4 h-4" />}
+          confirmIcon={<LogOut className="w-4 h-4 animate-pulse" />}
+          onAction={onLeave}
+          variant="leave"
           disabled={disabled}
-          className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-white/5 hover:bg-white/10 disabled:opacity-50 text-gray-400 hover:text-gray-200 border border-white/10 text-sm transition-colors"
-        >
-          <LogOut className="w-4 h-4" />
-          <span className="hidden sm:inline">Leave</span>
-        </button>
+        />
       </div>
 
       {/* Safety & Secondary Controls */}

@@ -21,7 +21,10 @@
 html, body {
   height: 100%;
   height: 100dvh;
+  width: 100%;
+  max-width: 100vw;
   overflow: hidden;
+  overflow-x: hidden;
   overscroll-behavior: none;
   touch-action: pan-y;
   background-color: var(--ink);
@@ -98,6 +101,21 @@ body {
   background: var(--ash);
 }
 
+/* Loading Bar Countdown Animation for Confirm Buttons */
+@keyframes countdown-bar {
+  0% {
+    transform: scaleX(1);
+  }
+  100% {
+    transform: scaleX(0);
+  }
+}
+
+.animate-countdown-bar {
+  animation: countdown-bar 3s linear forwards;
+  transform-origin: left;
+}
+
 /* Respect prefers-reduced-motion everywhere */
 @media (prefers-reduced-motion: reduce) {
   *,
@@ -112,7 +130,9 @@ body {
   .animate-sweep-idle,
   .animate-sweep-searching,
   .animate-pulse-center,
-  .animate-alert-blip {
+  .animate-alert-blip,
+  .animate-countdown-bar {
     animation: none !important;
   }
 }
+
