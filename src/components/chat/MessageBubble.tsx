@@ -36,8 +36,8 @@ export const MessageBubble = memo(function MessageBubble({
 
   if (message.senderId === "system") {
     return (
-      <div className="flex justify-center my-2.5 animate-fade-in">
-        <div className="px-3 py-1 rounded-md bg-surface border border-line text-xs font-mono text-ash text-center max-w-sm">
+      <div className="flex justify-center my-2.5 animate-fade-in w-full min-w-0 px-2">
+        <div className="px-3 py-1 rounded-md bg-surface border border-line text-xs font-mono text-ash text-center max-w-sm [overflow-wrap:anywhere] break-words">
           {message.text}
         </div>
       </div>
@@ -168,7 +168,7 @@ export const MessageBubble = memo(function MessageBubble({
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
       onTouchCancel={handleTouchCancel}
-      className={`group relative flex flex-col mb-2.5 animate-slide-up transition-colors duration-500 rounded-xl ${
+      className={`group relative flex flex-col mb-2.5 animate-slide-up transition-colors duration-500 rounded-xl w-full min-w-0 max-w-full ${
         isSelf ? "items-end" : "items-start"
       }`}
     >
@@ -198,7 +198,7 @@ export const MessageBubble = memo(function MessageBubble({
 
       {/* Bubble Row with Buttons and Message Body */}
       <div
-        className={`relative flex items-center gap-1.5 ${isSelf ? "flex-row-reverse" : "flex-row"}`}
+        className={`relative flex items-center gap-1.5 max-w-full min-w-0 ${isSelf ? "flex-row-reverse" : "flex-row"}`}
         style={{
           transform: `translateX(${swipeOffset}px)`,
           transition: swipeOffset === 0 ? "transform 0.2s cubic-bezier(0.2, 0, 0, 1)" : "none",
@@ -206,7 +206,7 @@ export const MessageBubble = memo(function MessageBubble({
       >
         {/* Message Bubble Body */}
         <div
-          className={`max-w-[85%] sm:max-w-[75%] px-3.5 py-2 rounded-xl text-sm leading-relaxed break-words font-body select-text ${
+          className={`max-w-[85%] sm:max-w-[75%] min-w-0 px-3.5 py-2 rounded-xl text-sm leading-relaxed [overflow-wrap:anywhere] [word-break:break-word] break-words font-body select-text ${
             isSelf
               ? "bg-signal text-ink font-medium rounded-br-xs shadow-sm"
               : "bg-surface-raised text-paper border border-line rounded-bl-xs shadow-sm"
@@ -217,29 +217,31 @@ export const MessageBubble = memo(function MessageBubble({
             <button
               type="button"
               onClick={() => onScrollToMessage?.(replyTo.id)}
-              className={`w-full text-left mb-1.5 px-2.5 py-1.5 rounded-lg text-xs transition-colors flex flex-col gap-0.5 cursor-pointer select-none group/quote ${
+              className={`w-full min-w-0 text-left mb-1.5 px-2.5 py-1.5 rounded-lg text-xs transition-colors flex flex-col gap-0.5 cursor-pointer select-none group/quote overflow-hidden ${
                 isSelf
                   ? "bg-black/15 hover:bg-black/25 text-ink border-l-2 border-ink/70"
                   : "bg-surface/90 hover:bg-surface text-paper border-l-2 border-signal"
               }`}
               title="Jump to quoted message"
             >
-              <div className="flex items-center gap-1 font-mono font-semibold text-[10px] opacity-90">
+              <div className="flex items-center gap-1 font-mono font-semibold text-[10px] opacity-90 min-w-0">
                 <Reply className="w-2.5 h-2.5 inline shrink-0" />
-                <span className="truncate">
+                <span className="truncate min-w-0">
                   {replyTo.senderId === currentUserId
                     ? "You"
                     : partnerDisplayName || replyTo.senderName || "Partner"}
                 </span>
               </div>
-              <p className="line-clamp-1 truncate text-[11px] opacity-80 font-normal font-sans">
+              <p className="line-clamp-1 truncate text-[11px] opacity-80 font-normal font-sans min-w-0 [overflow-wrap:anywhere]">
                 {replyTo.text}
               </p>
             </button>
           )}
 
           {/* Main Message Text */}
-          <div className="whitespace-pre-wrap">{text}</div>
+          <div className="whitespace-pre-wrap [overflow-wrap:anywhere] [word-break:break-word] break-words min-w-0">
+            {text}
+          </div>
         </div>
 
         {/* Hover / Action Buttons Container (Reply + Reaction) */}

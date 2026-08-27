@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { Send, MapPin, Radio, ShieldAlert, UserX, LogOut, MoreVertical, SkipForward, Reply, X } from "lucide-react";
 import { MessageBubble } from "./MessageBubble";
+import { ConfirmButton } from "./ConfirmButton";
 import type { ChatMessage, PartnerInfo } from "@/hooks/useChatSocket";
 import type { MessageReplyInfo } from "@/lib/protocol";
 import { formatDistance } from "@/lib/distance";
@@ -155,50 +156,68 @@ export function ChatWindow({
           </div>
         </div>
 
-        {/* Right: Safety Options Menu */}
-        <div className="relative shrink-0">
-          <button
-            type="button"
-            onClick={() => setShowSafetyMenu(!showSafetyMenu)}
-            aria-label="Safety and report options"
-            className="p-1.5 rounded-lg bg-surface hover:bg-surface-raised border border-line text-ash hover:text-paper transition-colors"
-          >
-            <MoreVertical className="w-4 h-4" />
-          </button>
+        {/* Right: Actions */}
+        <div className="flex items-center gap-1.5 shrink-0">
+          {/* Mobile Leave Button (hidden on desktop sm:) */}
+          <div className="sm:hidden">
+            <ConfirmButton
+              label="Leave"
+              confirmLabel="Confirm"
+              icon={<LogOut className="w-3.5 h-3.5 shrink-0" />}
+              confirmIcon={<LogOut className="w-3.5 h-3.5 shrink-0 animate-pulse" />}
+              onAction={onLeave}
+              variant="leave"
+              size="compact"
+              title="Exit matchmaking and return to radar"
+              confirmTitle="Click again to confirm exit"
+            />
+          </div>
 
-          {showSafetyMenu && (
-            <>
-              <div
-                className="fixed inset-0 z-30"
-                onClick={() => setShowSafetyMenu(false)}
-              />
-              <div className="absolute right-0 top-full mt-1.5 w-48 rounded-xl bg-surface-raised border border-line-bright shadow-2xl p-1.5 z-40 animate-fade-in">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowSafetyMenu(false);
-                    onOpenReport();
-                  }}
-                  className="w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-left text-xs font-medium text-alert hover:bg-alert/10 transition-colors"
-                >
-                  <ShieldAlert className="w-3.5 h-3.5 text-alert" />
-                  <span>Report Peer...</span>
-                </button>
+          {/* Safety Options Menu */}
+          <div className="relative shrink-0">
+            <button
+              type="button"
+              onClick={() => setShowSafetyMenu(!showSafetyMenu)}
+              aria-label="Safety and report options"
+              className="p-1.5 rounded-lg bg-surface hover:bg-surface-raised border border-line text-ash hover:text-paper transition-colors"
+            >
+              <MoreVertical className="w-4 h-4" />
+            </button>
 
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowSafetyMenu(false);
-                    onOpenBlock();
-                  }}
-                  className="w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-left text-xs font-medium text-alert hover:bg-alert/10 transition-colors"
-                >
-                  <UserX className="w-3.5 h-3.5 text-alert" />
-                  <span>Block Peer</span>
-                </button>
-              </div>
-            </>
-          )}
+            {showSafetyMenu && (
+              <>
+                <div
+                  className="fixed inset-0 z-30"
+                  onClick={() => setShowSafetyMenu(false)}
+                />
+                <div className="absolute right-0 top-full mt-1.5 w-48 rounded-xl bg-surface-raised border border-line-bright shadow-2xl p-1.5 z-40 animate-fade-in">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowSafetyMenu(false);
+                      onOpenReport();
+                    }}
+                    className="w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-left text-xs font-medium text-alert hover:bg-alert/10 transition-colors"
+                  >
+                    <ShieldAlert className="w-3.5 h-3.5 text-alert" />
+                    <span>Report Peer...</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowSafetyMenu(false);
+                      onOpenBlock();
+                    }}
+                    className="w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-left text-xs font-medium text-alert hover:bg-alert/10 transition-colors"
+                  >
+                    <UserX className="w-3.5 h-3.5 text-alert" />
+                    <span>Block Peer</span>
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
         </div>
       </div>
 
@@ -235,7 +254,7 @@ export function ChatWindow({
       )}
 
       {/* Message Stream */}
-      <div className="flex-1 p-3 sm:p-4 pt-4 sm:pt-6 overflow-y-auto space-y-2">
+      <div className="flex-1 min-h-0 w-full p-3 sm:p-4 pt-4 sm:pt-6 overflow-y-auto overflow-x-hidden space-y-2">
         {messages.length === 0 ? (
           <div className="flex-1 min-h-[160px] py-8 flex flex-col items-center justify-center text-center p-4 text-ash font-mono text-xs my-auto">
             <div className="w-10 h-10 rounded-full bg-signal/10 border border-signal/20 flex items-center justify-center text-signal mb-2">
@@ -262,13 +281,13 @@ export function ChatWindow({
 
         {/* Live Partner Typing Indicator Bubble */}
         {isPartnerTyping && (
-          <div className="flex flex-col mb-2.5 items-start animate-slide-up">
-            <div className="bg-surface-raised border border-line rounded-xl rounded-bl-xs px-3.5 py-2.5 shadow-sm flex items-center gap-1.5">
+          <div className="flex flex-col mb-2.5 items-start animate-slide-up w-full min-w-0">
+            <div className="bg-surface-raised border border-line rounded-xl rounded-bl-xs px-3.5 py-2.5 shadow-sm flex items-center gap-1.5 max-w-[85%]">
               <span className="w-1.5 h-1.5 rounded-full bg-signal animate-bounce [animation-delay:-0.3s]" />
               <span className="w-1.5 h-1.5 rounded-full bg-signal animate-bounce [animation-delay:-0.15s]" />
               <span className="w-1.5 h-1.5 rounded-full bg-signal animate-bounce" />
             </div>
-            <span className="font-mono text-[10px] text-ash/80 mt-1 px-1 tracking-tight">
+            <span className="font-mono text-[10px] text-ash/80 mt-1 px-1 tracking-tight truncate max-w-full">
               {partner?.displayName || "Partner"} is typing...
             </span>
           </div>
@@ -279,13 +298,13 @@ export function ChatWindow({
 
       {/* Active Replying To Banner */}
       {replyingTo && (
-        <div className="px-3 sm:px-4 py-2 bg-surface-raised/95 border-t border-line flex items-center justify-between gap-2.5 animate-slide-up backdrop-blur-xs">
-          <div className="flex items-center gap-2.5 min-w-0 flex-1">
+        <div className="px-3 sm:px-4 py-2 bg-surface-raised/95 border-t border-line flex items-center justify-between gap-2.5 animate-slide-up backdrop-blur-xs min-w-0 w-full overflow-hidden">
+          <div className="flex items-center gap-2.5 min-w-0 flex-1 overflow-hidden">
             <div className="w-1 self-stretch rounded-full bg-signal shrink-0" />
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-1.5 font-mono text-[11px] font-semibold text-signal">
+            <div className="min-w-0 flex-1 overflow-hidden">
+              <div className="flex items-center gap-1.5 font-mono text-[11px] font-semibold text-signal truncate">
                 <Reply className="w-3 h-3 shrink-0" />
-                <span>
+                <span className="truncate">
                   Replying to{" "}
                   {replyingTo.isSelf
                     ? "yourself"
@@ -311,41 +330,47 @@ export function ChatWindow({
 
       {/* Subtle Typing Status Bar above Composer */}
       {isPartnerTyping && !replyingTo && (
-        <div className="px-3.5 py-1 bg-surface-raised/90 border-t border-line text-[11px] font-mono text-signal flex items-center gap-1.5 animate-fade-in">
-          <span className="w-1.5 h-1.5 rounded-full bg-signal animate-pulse" />
-          <span>{partner?.displayName || "Partner"} is typing...</span>
+        <div className="px-3.5 py-1 bg-surface-raised/90 border-t border-line text-[11px] font-mono text-signal flex items-center gap-1.5 animate-fade-in min-w-0 w-full overflow-hidden">
+          <span className="w-1.5 h-1.5 rounded-full bg-signal animate-pulse shrink-0" />
+          <span className="truncate">{partner?.displayName || "Partner"} is typing...</span>
         </div>
       )}
 
-      {/* Bottom Control Bar: Leave + Skip on bottom left, Composer in center, Send on right */}
-      <div className="px-2.5 sm:px-3 py-2 bg-surface-raised border-t border-line flex items-center gap-1.5 sm:gap-2">
+      {/* Bottom Control Bar: Leave (desktop only) + Skip on bottom left, Composer in center, Send on right */}
+      <div className="px-2.5 sm:px-3 py-2 bg-surface-raised border-t border-line flex items-center gap-1.5 sm:gap-2 min-w-0 w-full overflow-hidden">
         {/* Bottom Left Action Controls */}
         <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
-          {/* Leave / Exit button */}
-          <button
-            type="button"
-            onClick={onLeave}
-            className="flex items-center gap-1 px-2.5 sm:px-3 py-2 rounded-lg bg-surface hover:bg-alert/15 border border-line hover:border-alert/30 text-ash hover:text-alert font-display text-xs font-semibold transition-all"
-            title="Exit matchmaking and return to radar"
-          >
-            <LogOut className="w-3.5 h-3.5 shrink-0" />
-            <span className="hidden sm:inline">Leave</span>
-          </button>
+          {/* Desktop-only Leave / Exit button (hidden on mobile, shown on sm:) */}
+          <div className="hidden sm:block">
+            <ConfirmButton
+              label="Leave"
+              confirmLabel="Confirm"
+              icon={<LogOut className="w-3.5 h-3.5 shrink-0" />}
+              confirmIcon={<LogOut className="w-3.5 h-3.5 shrink-0 animate-pulse" />}
+              onAction={onLeave}
+              variant="leave"
+              size="normal"
+              title="Exit matchmaking and return to radar"
+              confirmTitle="Click again to confirm exit"
+            />
+          </div>
 
-          {/* Skip / Next button */}
-          <button
-            type="button"
-            onClick={onSkip}
-            className="btn-ptt flex items-center gap-1 sm:gap-1.5 px-3 sm:px-3.5 py-2 rounded-lg font-display font-bold text-xs tracking-wide shadow-sm shrink-0"
+          {/* Skip / Next button (visible on both mobile and desktop) */}
+          <ConfirmButton
+            label="Skip"
+            confirmLabel="Confirm"
+            icon={<SkipForward className="w-3.5 h-3.5 shrink-0" />}
+            confirmIcon={<SkipForward className="w-3.5 h-3.5 shrink-0 animate-pulse" />}
+            onAction={onSkip}
+            variant="skip"
+            size="normal"
             title="Skip to next nearby peer [Esc]"
-          >
-            <SkipForward className="w-3.5 h-3.5 shrink-0" />
-            <span>Skip</span>
-          </button>
+            confirmTitle="Click again to confirm skip"
+          />
         </div>
 
         {/* Message Input Form */}
-        <form onSubmit={handleSend} className="flex-1 flex items-center gap-1.5 sm:gap-2 min-w-0">
+        <form onSubmit={handleSend} className="flex-1 flex items-center gap-1.5 sm:gap-2 min-w-0 overflow-hidden">
           <input
             id="chat-message-input"
             name="chatMessage"
