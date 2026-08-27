@@ -167,9 +167,51 @@ export default {
       }
     }
 
-    if (url.pathname === "/api/campuses" && request.method === "GET") {
-      return jsonResponse({ campuses: [] });
-    }
+      if (url.pathname === "/api/campuses" && request.method === "GET") {
+        return jsonResponse({ campuses: [] });
+      }
+
+      if (url.pathname === "/api/location/ip" && request.method === "GET") {
+        const cf = (request as any).cf;
+        const rawLat = cf?.latitude ? parseFloat(cf.latitude) : null;
+        const rawLng = cf?.longitude ? parseFloat(cf.longitude) : null;
+        const city = cf?.city || null;
+        const region = cf?.region || null;
+        const country = cf?.country || null;
+
+        const hasValidCoords =
+          typeof rawLat === "number" &&
+          typeof rawLng === "number" &&
+          Number.isFinite(rawLat) &&
+          Number.isFinite(rawLng);
+
+        if (hasValidCoords) {
+          const parts = [city, region, country].filter(Boolean);
+          const locationName = parts.length > 0 ? `${parts.join(", ")} (Edge IP)` : "Approximate Edge IP Location";
+          return jsonResponse({
+            lat: rawLat,
+            lng: rawLng,
+            accuracy: 10000, // ~10km typical IP accuracy
+            city,
+            region,
+            country,
+            locationName,
+            source: "ip_edge",
+          });
+        }
+
+        // Local development or unavailable CF geolocation fallback
+        return jsonResponse({
+          lat: null,
+          lng: null,
+          accuracy: null,
+          city: null,
+          region: null,
+          country: null,
+          locationName: null,
+          source: "ip_unavailable",
+        });
+      }
 
     // --------------------------------------------------------------------------
     // 3. Authenticated HTTP Routes
@@ -273,11 +315,20 @@ export default {
     // Campus Preferences
     if (url.pathname === "/api/preferences") {
       if (request.method === "GET") {
-        const prefs = await prisma.userCampusPreference.findMany({
-          where: { user_id: authUser.userId },
-          select: { campus_id: true },
-        });
-        return jsonResponse({ preferences: prefs.map((p) => p.campus_id) });
+        try {
+          const fetchPromise = prisma.userCampusPreference.findMany({
+            where: { user_id: authUser.userId },
+            select: { campus_id: true },
+          });
+          const timeoutPromise = new Promise<any[]>((_, reject) =>
+            setTimeout(() => reject(new Error("DB timeout")), 2000)
+          );
+          const prefs = await Promise.race([fetchPromise, timeoutPromise]);
+          return jsonResponse({ preferences: prefs.map((p: any) => p.campus_id) });
+        } catch (err) {
+          console.warn("DB preferences lookup timeout/error, using empty fallback:", err);
+          return jsonResponse({ preferences: [] });
+        }
       }
 
       if (request.method === "POST") {
@@ -305,15 +356,24 @@ export default {
     // User Blocks
     if (url.pathname === "/api/blocks") {
       if (request.method === "GET") {
-        const blocks = await prisma.userBlock.findMany({
-          where: { blocker_user_id: authUser.userId },
-          include: {
-            blocked: {
-              select: { user_id: true, display_name: true },
+        try {
+          const fetchPromise = prisma.userBlock.findMany({
+            where: { blocker_user_id: authUser.userId },
+            include: {
+              blocked: {
+                select: { user_id: true, display_name: true },
+              },
             },
-          },
-        });
-        return jsonResponse({ blocks });
+          });
+          const timeoutPromise = new Promise<any[]>((_, reject) =>
+            setTimeout(() => reject(new Error("DB timeout")), 2000)
+          );
+          const blocks = await Promise.race([fetchPromise, timeoutPromise]);
+          return jsonResponse({ blocks });
+        } catch (err) {
+          console.warn("DB blocks lookup timeout/error, using empty fallback:", err);
+          return jsonResponse({ blocks: [] });
+        }
       }
 
       if (request.method === "POST") {

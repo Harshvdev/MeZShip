@@ -82,6 +82,7 @@ export function useChatSocket(
   const userLngRef = useRef<number | null>(userLng);
   const activeMatchIdRef = useRef<string | null>(null);
   const autoReconnectTimerRef = useRef<any>(null);
+  const isManualReconnectingRef = useRef<boolean>(false);
   const pingIntervalRef = useRef<any>(null);
   const watchdogIntervalRef = useRef<any>(null);
   const lastHeartbeatResponseRef = useRef<number>(Date.now());
@@ -237,19 +238,19 @@ export function useChatSocket(
           console.warn("Ping send error:", e);
         }
       }
-    }, 20000);
+    }, 15000);
 
     if (watchdogIntervalRef.current) clearInterval(watchdogIntervalRef.current);
     watchdogIntervalRef.current = setInterval(() => {
       if (ws.readyState === WebSocket.OPEN) {
-        if (Date.now() - lastHeartbeatResponseRef.current > 45000) {
-          console.warn("WebSocket watchdog timeout: no traffic in 45s. Reconnecting...");
+        if (Date.now() - lastHeartbeatResponseRef.current > 25000) {
+          console.warn("WebSocket watchdog timeout: no traffic in 25s. Reconnecting...");
           try {
             ws.close();
           } catch {}
         }
       }
-    }, 5000);
+    }, 4000);
   }, []);
 
   const sendTyping = useCallback(
@@ -461,6 +462,10 @@ export function useChatSocket(
         pendingAcksRef.current.forEach((t) => clearTimeout(t));
         pendingAcksRef.current.clear();
 
+        if (isManualReconnectingRef.current) {
+          return;
+        }
+
         setChatState((prev) => {
           if (prev === "MATCHED") {
             setStatusMessage("Disconnected from room. Finding next partner...");
@@ -489,6 +494,10 @@ export function useChatSocket(
         pendingAcksRef.current.forEach((t) => clearTimeout(t));
         pendingAcksRef.current.clear();
 
+        if (isManualReconnectingRef.current) {
+          return;
+        }
+
         setChatState((prev) => {
           if (prev === "MATCHED") {
             setStatusMessage("Room connection error. Searching for next match...");
@@ -516,19 +525,31 @@ export function useChatSocket(
       const latToSend = userLatRef.current ?? userLat;
       const lngToSend = userLngRef.current ?? userLng;
 
-      if (
-        latToSend === null ||
-        lngToSend === null ||
-        !Number.isFinite(latToSend) ||
-        !Number.isFinite(lngToSend) ||
-        (latToSend === 0 && lngToSend === 0)
-      ) {
-        setStatusMessage("Location permission is required to start matching.");
+      const isValidCoords =
+        typeof latToSend === "number" &&
+        typeof lngToSend === "number" &&
+        Number.isFinite(latToSend) &&
+        Number.isFinite(lngToSend) &&
+        latToSend >= -90 &&
+        latToSend <= 90 &&
+        lngToSend >= -180 &&
+        lngToSend <= 180 &&
+        (latToSend !== 0 || lngToSend !== 0);
+
+      if (!isValidCoords) {
+        setStatusMessage("Location permission or fix is required to start matching.");
         setChatState("IDLE");
         return;
       }
 
+      if (autoReconnectTimerRef.current) {
+        clearTimeout(autoReconnectTimerRef.current);
+        autoReconnectTimerRef.current = null;
+      }
+
+      isManualReconnectingRef.current = true;
       closeCurrentSocket();
+      isManualReconnectingRef.current = false;
 
       currentRadiusRef.current = radius;
       setMessages([]);
@@ -621,6 +642,9 @@ export function useChatSocket(
       };
 
       ws.onclose = (event) => {
+        if (isManualReconnectingRef.current) {
+          return;
+        }
         setChatState((prev) => {
           if (prev === "SEARCHING") {
             setStatusMessage("Matchmaking connection dropped. Reconnecting...");
@@ -636,6 +660,9 @@ export function useChatSocket(
       };
 
       ws.onerror = () => {
+        if (isManualReconnectingRef.current) {
+          return;
+        }
         setChatState((prev) => {
           if (prev === "SEARCHING") {
             setStatusMessage("Connection interrupted. Reconnecting...");
@@ -723,6 +750,10 @@ export function useChatSocket(
 
   const skip = useCallback(() => {
     sendTyping(false);
+    if (autoReconnectTimerRef.current) {
+      clearTimeout(autoReconnectTimerRef.current);
+      autoReconnectTimerRef.current = null;
+    }
     if (activeMatchIdRef.current) {
       updateMatchLogEnd(activeMatchIdRef.current, "self_skip");
     }
@@ -752,7 +783,9 @@ export function useChatSocket(
         console.error("Leave send error:", e);
       }
     }
+    isManualReconnectingRef.current = true;
     closeCurrentSocket();
+    isManualReconnectingRef.current = false;
     setChatState("IDLE");
     setMessages([]);
     setPartner(null);
@@ -931,6 +964,38 @@ export function useChatSocket(
     },
     [userId]
   );
+
+  // Handle mobile backgrounding, sleep resume, and network recovery
+  useEffect(() => {
+    const handleNetworkOrVisibilityResume = () => {
+      if (document.visibilityState === "visible" || navigator.onLine) {
+        if (wsRef.current) {
+          if (wsRef.current.readyState === WebSocket.OPEN) {
+            try {
+              wsRef.current.send(JSON.stringify({ type: "ping" }));
+            } catch {}
+          } else if (
+            wsRef.current.readyState === WebSocket.CLOSED ||
+            wsRef.current.readyState === WebSocket.CLOSING
+          ) {
+            if (chatState === "SEARCHING") {
+              startMatching(currentRadiusRef.current);
+            }
+          }
+        } else if (chatState === "SEARCHING") {
+          startMatching(currentRadiusRef.current);
+        }
+      }
+    };
+
+    window.addEventListener("online", handleNetworkOrVisibilityResume);
+    document.addEventListener("visibilitychange", handleNetworkOrVisibilityResume);
+
+    return () => {
+      window.removeEventListener("online", handleNetworkOrVisibilityResume);
+      document.removeEventListener("visibilitychange", handleNetworkOrVisibilityResume);
+    };
+  }, [chatState, startMatching]);
 
   useEffect(() => {
     return () => {

@@ -283,12 +283,12 @@ export default function Home() {
                   {geoLoading ? (
                     <>
                       <RefreshCw className="w-4 h-4 animate-spin" />
-                      <span>Acquiring GPS Signal...</span>
+                      <span>Acquiring Location Signal...</span>
                     </>
                   ) : (
                     <>
                       <MapPin className="w-4 h-4" />
-                      <span>Grant Location Permission</span>
+                      <span>{permissionDenied ? "Grant Location Permission" : "Acquire Location Fix"}</span>
                     </>
                   )}
                 </button>

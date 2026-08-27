@@ -23,6 +23,7 @@ interface SocketAttachment {
 export class MatchRoomDO extends DurableObject<Env> {
   private rateLimits: Map<string, MessageRateBucket> = new Map();
   private matchContext: MatchContext | null = null;
+  private pendingMessages: Array<{ payload: string; senderId: string }> = [];
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
@@ -127,11 +128,29 @@ export class MatchRoomDO extends DurableObject<Env> {
               userId,
             })
           );
+
+          // Replay any buffered messages sent by partner before this user joined
+          if (this.pendingMessages.length > 0) {
+            const remaining: Array<{ payload: string; senderId: string }> = [];
+            for (const item of this.pendingMessages) {
+              if (item.senderId !== userId) {
+                try {
+                  server.send(item.payload);
+                } catch {}
+              } else {
+                remaining.push(item);
+              }
+            }
+            this.pendingMessages = remaining;
+          }
+
           const activeSockets = this.ctx.getWebSockets();
           const uniqueUserIds = new Set<string>();
           for (const s of activeSockets) {
-            const att = s.deserializeAttachment() as SocketAttachment | null;
-            if (att?.userId) uniqueUserIds.add(att.userId);
+            if (s.readyState === 1) {
+              const att = s.deserializeAttachment() as SocketAttachment | null;
+              if (att?.userId) uniqueUserIds.add(att.userId);
+            }
           }
           if (uniqueUserIds.size >= 2) {
             this.broadcast({
@@ -274,7 +293,9 @@ export class MatchRoomDO extends DurableObject<Env> {
         });
 
         const activeSockets = this.ctx.getWebSockets();
+        let forwardedToOther = false;
         for (const socket of activeSockets) {
+          if (socket.readyState !== 1) continue;
           const targetAttachment = socket.deserializeAttachment() as SocketAttachment | null;
           const isCurrentSocket = currentSocketId
             ? targetAttachment?.socketId === currentSocketId
@@ -283,9 +304,17 @@ export class MatchRoomDO extends DurableObject<Env> {
           if (!isCurrentSocket) {
             try {
               socket.send(payload);
+              forwardedToOther = true;
             } catch (e) {
               console.error("Message forwarding error:", e);
             }
+          }
+        }
+
+        // If partner has not yet completed WebSocket handshake, buffer message to replay upon connection
+        if (!forwardedToOther) {
+          if (this.pendingMessages.length < 20) {
+            this.pendingMessages.push({ payload, senderId });
           }
         }
 

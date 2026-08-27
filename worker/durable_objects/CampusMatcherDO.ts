@@ -109,6 +109,14 @@ export class CampusMatcherDO extends DurableObject<Env> {
     const entryMap = new Map<string, QueueEntry>();
     for (const ws of sockets) {
       try {
+        // Ignore sockets that are closing, closed, or not yet open
+        if (ws.readyState !== 1 /* WebSocket.OPEN */) {
+          try {
+            ws.serializeAttachment(null);
+          } catch {}
+          continue;
+        }
+
         const user = ws.deserializeAttachment() as WaitingUser | null;
         if (user && user.userId) {
           const existing = entryMap.get(user.userId);
@@ -158,7 +166,16 @@ export class CampusMatcherDO extends DurableObject<Env> {
         return new Response("Missing userId", { status: 400 });
       }
 
-      if (!Number.isFinite(lat) || !Number.isFinite(lng) || (lat === 0 && lng === 0)) {
+      const isValidCoords =
+        Number.isFinite(lat) &&
+        Number.isFinite(lng) &&
+        lat >= -90 &&
+        lat <= 90 &&
+        lng >= -180 &&
+        lng <= 180 &&
+        (lat !== 0 || lng !== 0);
+
+      if (!isValidCoords) {
         return new Response("Valid location coordinates required to join matchmaking", { status: 400 });
       }
 
@@ -469,6 +486,11 @@ export class CampusMatcherDO extends DurableObject<Env> {
     });
 
     const best = eligibleMatches[0];
+
+    // Re-verify that both candidate and target sockets are still open (readyState === 1)
+    if (candidateEntry.ws.readyState !== 1 || best.other.ws.readyState !== 1) {
+      return;
+    }
 
     // MATCH FOUND!
     const matchId = `match_${crypto.randomUUID()}`;
