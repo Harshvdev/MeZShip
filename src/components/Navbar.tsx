@@ -13,6 +13,7 @@ interface NavbarProps {
   onOpenLogs?: () => void;
   onSignOut: () => void;
   onlineCount?: number;
+  loading?: boolean;
 }
 
 export function Navbar({
@@ -22,6 +23,7 @@ export function Navbar({
   onOpenLogs,
   onSignOut,
   onlineCount = 0,
+  loading = false,
 }: NavbarProps) {
   const [showMenu, setShowMenu] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -151,6 +153,8 @@ export function Navbar({
                 </div>
               )}
             </div>
+          ) : loading ? (
+            <div className="h-7 w-20 sm:w-24 rounded-lg bg-surface border border-line animate-pulse" />
           ) : (
             <Link
               href="/auth"

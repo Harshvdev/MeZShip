@@ -20,7 +20,13 @@ export function getPrisma(env: Env): PrismaClient {
     return cachedPrisma;
   }
 
-  const pool = new Pool({ connectionString, max: 5 });
+  const isLocal = connectionString.includes("localhost") || connectionString.includes("127.0.0.1");
+  const pool = new Pool({
+    connectionString,
+    max: 5,
+    connectionTimeoutMillis: 5000,
+    ssl: isLocal ? false : { rejectUnauthorized: false },
+  });
   const adapter = new PrismaPg(pool);
   cachedPrisma = new PrismaClient({ adapter });
   lastConnectionString = connectionString;

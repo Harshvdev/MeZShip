@@ -1,7 +1,7 @@
 import { DurableObject } from "cloudflare:workers";
 import type { Env, WaitingUser } from "../types";
 import { haversineDistanceMeters } from "../lib/geo";
-import { getPrisma } from "../lib/db";
+import { getSupabaseAdmin } from "../lib/supabase";
 
 interface QueueEntry {
   ws: WebSocket;
@@ -70,17 +70,19 @@ export class CampusMatcherDO extends DurableObject<Env> {
   }
 
   /**
-   * Sync persistent blocks involving a specific user from Postgres
+   * Sync persistent blocks involving a specific user from Postgres via Supabase HTTPS
    */
   private async syncUserBlocksFromDb(userId: string): Promise<void> {
     try {
-      const prisma = getPrisma(this.env);
-      const blocks = await prisma.userBlock.findMany({
-        where: {
-          OR: [{ blocker_user_id: userId }, { blocked_user_id: userId }],
-        },
-        select: { blocker_user_id: true, blocked_user_id: true },
-      });
+      const supabase = getSupabaseAdmin(this.env);
+      if (!supabase) return;
+
+      const { data: blocks, error } = await supabase
+        .from("user_blocks")
+        .select("blocker_user_id, blocked_user_id")
+        .or(`blocker_user_id.eq.${userId},blocked_user_id.eq.${userId}`);
+
+      if (error || !blocks) return;
 
       let changed = false;
       for (const b of blocks) {

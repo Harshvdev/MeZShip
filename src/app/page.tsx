@@ -201,6 +201,7 @@ export default function Home() {
       <Navbar
         profile={profile}
         onlineCount={onlineCount}
+        loading={authLoading}
         onOpenSettings={() => setShowSettings(true)}
         onOpenLocation={() => setShowLocationModal(true)}
         onOpenLogs={() => setShowMatchLogs(true)}
