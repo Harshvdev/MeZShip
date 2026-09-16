@@ -70,6 +70,7 @@ model UserCampusPreference {
   campus Campus      @relation(fields: [campus_id], references: [id], onDelete: Cascade)
 
   @@id([user_id, campus_id])
+  @@index([campus_id])
   @@map("user_campus_preferences")
 }
 
@@ -82,6 +83,7 @@ model UserBlock {
   blocked UserProfile @relation("BlockedUser", fields: [blocked_user_id], references: [user_id], onDelete: Cascade)
 
   @@id([blocker_user_id, blocked_user_id])
+  @@index([blocked_user_id])
   @@map("user_blocks")
 }
 
@@ -98,6 +100,7 @@ model Report {
   reported UserProfile @relation("ReportedUser", fields: [reported_user_id], references: [user_id], onDelete: Cascade)
 
   @@unique([reporter_user_id, reported_user_id])
+  @@index([reported_user_id])
   @@map("reports")
 }
 
